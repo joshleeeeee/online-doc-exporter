@@ -123,6 +123,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Batch & Manager Logic ---
     const btnScan = document.getElementById('btn-scan');
     const btnBatchStart = document.getElementById('btn-batch-start');
+    const btnBatchPause = document.getElementById('btn-batch-pause');
+    const btnBatchResume = document.getElementById('btn-batch-resume');
     const btnDownloadZip = document.getElementById('btn-download-zip');
     const btnClearAll = document.getElementById('btn-clear-all');
 
@@ -132,6 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const countLabel = document.getElementById('batch-count');
 
     const progressContainer = document.getElementById('batch-progress-container');
+    const globalProgressArea = document.getElementById('global-progress-area');
     const progressFill = document.getElementById('batch-progress-fill');
     const statusText = document.getElementById('batch-status-text');
 
@@ -196,6 +199,17 @@ document.addEventListener('DOMContentLoaded', () => {
         checkboxes.forEach(cb => cb.checked = checkAll.checked);
     });
 
+    btnBatchPause.addEventListener('click', () => {
+        chrome.runtime.sendMessage({ action: 'PAUSE_BATCH' }, () => updateStatus());
+    });
+
+    btnBatchResume.addEventListener('click', () => {
+        chrome.runtime.sendMessage({ action: 'RESUME_BATCH' }, () => {
+            startPolling();
+            updateStatus();
+        });
+    });
+
     btnBatchStart.addEventListener('click', () => {
         const checkboxes = document.querySelectorAll('.batch-checkbox:checked');
         if (checkboxes.length === 0) {
@@ -203,7 +217,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Prevent double-click immediately
         btnBatchStart.disabled = true;
         btnScan.disabled = true;
 
@@ -241,24 +254,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateStatus = () => {
         chrome.runtime.sendMessage({ action: 'GET_BATCH_STATUS' }, (res) => {
             if (!res) return;
-            const { isProcessing, queue, results, currentItem } = res;
+            const { isProcessing, isPaused, queue, results, currentItem } = res;
             const queueList = queue || [];
             const queueLength = queueList.length;
 
-            // Update Batch Tab
-            if (isProcessing || queueLength > 0 || currentItem) {
-                progressContainer.style.display = 'block';
-                const finishedCount = results.length;
-                const activeCount = currentItem ? 1 : 0;
-                const totalInThisBatch = finishedCount + activeCount + queueLength;
+            const isActive = isProcessing || queueLength > 0 || currentItem || isPaused;
 
-                statusText.innerText = `进度: 已完成 ${finishedCount} | 正在抓取 ${activeCount} | 待抓取 ${queueLength}`;
-
-                const percent = totalInThisBatch > 0 ? (finishedCount / totalInThisBatch) * 100 : 0;
-
-                progressFill.style.width = Math.min(100, percent) + '%';
+            // Updated Toggle Logic for Global Progress Area
+            if (isActive) {
+                globalProgressArea.style.display = 'block';
                 btnBatchStart.disabled = true;
-                btnScan.disabled = true;
+
+                if (isPaused) {
+                    btnBatchPause.style.display = 'none';
+                    btnBatchResume.style.display = 'flex';
+                } else {
+                    btnBatchPause.style.display = 'flex';
+                    btnBatchResume.style.display = 'none';
+                }
             } else {
                 // If it was polling but now finished
                 if (pollInterval && !isProcessing && queueLength === 0 && !currentItem) {
@@ -267,16 +280,30 @@ document.addEventListener('DOMContentLoaded', () => {
                     progressFill.style.width = '100%';
                     statusText.innerText = '抓取任务已完成';
                     setTimeout(() => {
-                        progressContainer.style.display = 'none';
+                        globalProgressArea.style.display = 'none';
                         btnBatchStart.disabled = false;
                         btnScan.disabled = false;
                     }, 3000);
                 } else if (!pollInterval) {
-                    progressContainer.style.display = 'none';
+                    globalProgressArea.style.display = 'none';
                     btnBatchStart.disabled = false;
                     btnScan.disabled = false;
                 }
             }
+
+            // Update Batch Tab/Bottom Progress Details
+            if (isActive) {
+                const finishedCount = results.length;
+                const activeCount = currentItem ? 1 : 0;
+                const totalInThisBatch = finishedCount + activeCount + queueLength;
+
+                statusText.innerText = `进度: 已完成 ${finishedCount} | ${isPaused ? '暂停中' : '正在抓取'} ${activeCount} | 待抓取 ${queueLength}`;
+
+                const percent = totalInThisBatch > 0 ? (finishedCount / totalInThisBatch) * 100 : 0;
+                progressFill.style.width = Math.min(100, percent) + '%';
+                btnScan.disabled = true;
+            }
+
 
             // Update Manager Tab
             renderManagerList(results, currentItem, queueList);

@@ -1,19 +1,22 @@
 let BATCH_QUEUE = [];
 let isProcessing = false;
+let isPaused = false;
 let processedResults = [];
-let currentItem = null; // Track what's currently being worked on
+let currentItem = null;
+let currentTabId = null;
 
 let isReady = false;
 const preparePromise = new Promise(resolve => {
-    chrome.storage.local.get(['batchQueue', 'processedResults', 'isProcessing'], (data) => {
+    chrome.storage.local.get(['batchQueue', 'processedResults', 'isProcessing', 'isPaused'], (data) => {
         if (data.batchQueue) BATCH_QUEUE = data.batchQueue;
         if (data.processedResults) processedResults = data.processedResults;
-        // Don't restore isProcessing directly as true without a queue
-        if (data.isProcessing && BATCH_QUEUE.length > 0) {
+        if (data.isPaused) isPaused = true;
+
+        if (data.isProcessing && BATCH_QUEUE.length > 0 && !isPaused) {
             isProcessing = true;
             processNextItem();
         } else {
-            isProcessing = false;
+            isProcessing = data.isProcessing || false;
         }
         isReady = true;
         resolve();
@@ -24,7 +27,8 @@ async function saveState() {
     await chrome.storage.local.set({
         batchQueue: BATCH_QUEUE,
         processedResults,
-        isProcessing
+        isProcessing,
+        isPaused
     });
 }
 
@@ -39,7 +43,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
 
             items.forEach(item => {
-                // Deduplicate: Don't add if already in queue or currently processing
                 const isInQueue = BATCH_QUEUE.some(q => q.url === item.url);
                 const isCurrent = currentItem && currentItem.url === item.url;
                 if (!isInQueue && !isCurrent) {
@@ -53,6 +56,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 }
             });
 
+            isPaused = false; // Auto resume on new tasks
             if (!isProcessing) {
                 processNextItem();
             }
@@ -61,21 +65,47 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         } else if (request.action === 'GET_BATCH_STATUS') {
             sendResponse({
                 isProcessing,
-                queue: BATCH_QUEUE, // Return full queue
+                isPaused,
+                queue: BATCH_QUEUE,
                 results: processedResults,
                 currentItem: currentItem
             });
+        } else if (request.action === 'PAUSE_BATCH') {
+            isPaused = true;
+            await saveState();
+            sendResponse({ success: true });
+        } else if (request.action === 'RESUME_BATCH') {
+            isPaused = false;
+            if (!isProcessing && BATCH_QUEUE.length > 0) {
+                processNextItem();
+            }
+            await saveState();
+            sendResponse({ success: true });
         } else if (request.action === 'CLEAR_BATCH_RESULTS') {
             processedResults = [];
             BATCH_QUEUE = [];
             isProcessing = false;
+            isPaused = false;
+            if (currentTabId) {
+                try { chrome.tabs.remove(currentTabId); } catch (e) { }
+            }
             currentItem = null;
+            currentTabId = null;
             await saveState();
             sendResponse({ success: true });
         } else if (request.action === 'DELETE_BATCH_ITEM') {
             const { url } = request;
             processedResults = processedResults.filter(item => item.url !== url);
-            if (currentItem && currentItem.url === url) currentItem = null;
+            BATCH_QUEUE = BATCH_QUEUE.filter(item => item.url !== url);
+
+            if (currentItem && currentItem.url === url) {
+                if (currentTabId) {
+                    try { chrome.tabs.remove(currentTabId); } catch (e) { }
+                }
+                currentItem = null;
+                currentTabId = null;
+            }
+
             await saveState();
             sendResponse({ success: true });
         }
@@ -85,9 +115,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 async function processNextItem() {
+    if (isPaused) {
+        isProcessing = false;
+        return;
+    }
+
     if (BATCH_QUEUE.length === 0) {
         isProcessing = false;
         currentItem = null;
+        currentTabId = null;
         await saveState();
         return;
     }
@@ -96,20 +132,32 @@ async function processNextItem() {
     currentItem = BATCH_QUEUE.shift();
     await saveState();
 
-    let tabId = null;
-    console.log('Processing:', currentItem.url);
+    currentTabId = null;
+    const taskUrl = currentItem.url;
+    console.log('Processing:', taskUrl);
 
     try {
-        const tab = await chrome.tabs.create({ url: currentItem.url, active: false });
-        tabId = tab.id;
+        const tab = await chrome.tabs.create({ url: taskUrl, active: false });
+        currentTabId = tab.id;
 
-        await waitForTabLoad(tabId);
+        await waitForTabLoad(currentTabId);
+
+        if (!currentItem || currentItem.url !== taskUrl || isPaused) {
+            throw new Error("Cancelled");
+        }
+
         await new Promise(r => setTimeout(r, 4000));
+
+        if (!currentItem || currentItem.url !== taskUrl || isPaused) {
+            throw new Error("Cancelled");
+        }
 
         let response = null;
         for (let i = 0; i < 3; i++) {
             try {
-                response = await chrome.tabs.sendMessage(tabId, {
+                if (!currentItem || currentItem.url !== taskUrl || isPaused) break;
+
+                response = await chrome.tabs.sendMessage(currentTabId, {
                     action: 'EXTRACT_CONTENT',
                     format: currentItem.format || 'markdown',
                     options: currentItem.options || { useBase64: true }
@@ -118,6 +166,10 @@ async function processNextItem() {
             } catch (e) {
                 await new Promise(r => setTimeout(r, 2000));
             }
+        }
+
+        if (!currentItem || currentItem.url !== taskUrl || isPaused) {
+            throw new Error("Cancelled");
         }
 
         if (response && response.success) {
@@ -133,55 +185,86 @@ async function processNextItem() {
             }
 
             if (title === 'Untitled' || !title) {
-                const updatedTab = await chrome.tabs.get(tabId);
-                title = updatedTab.title || 'Doc ' + Date.now();
+                try {
+                    const updatedTab = await chrome.tabs.get(currentTabId);
+                    title = updatedTab.title || 'Doc ' + Date.now();
+                } catch (e) {
+                    title = 'Doc ' + Date.now();
+                }
             }
 
             processedResults.push({
-                url: currentItem.url,
+                url: taskUrl,
                 title: title.trim(),
                 content: response.content,
                 status: 'success',
                 timestamp: Date.now()
             });
         } else {
-            throw new Error(response ? response.error : 'Extraction failed or timed out');
+            throw new Error(response ? response.error : 'Extraction failed');
         }
     } catch (err) {
-        console.error('Batch failed:', currentItem.url, err);
-        processedResults.push({
-            url: currentItem.url,
-            title: currentItem.title || 'Failed Doc',
-            status: 'failed',
-            error: err.message,
-            timestamp: Date.now()
-        });
-    } finally {
-        if (tabId) {
-            try { await chrome.tabs.remove(tabId); } catch (e) { }
+        if (err.message !== "Cancelled" && currentItem && currentItem.url === taskUrl) {
+            console.error('Batch failed:', taskUrl, err);
+            processedResults.push({
+                url: taskUrl,
+                title: currentItem.title || 'Failed Doc',
+                status: 'failed',
+                error: err.message,
+                timestamp: Date.now()
+            });
         }
+    } finally {
+        if (currentTabId) {
+            try { await chrome.tabs.remove(currentTabId); } catch (e) { }
+        }
+
         currentItem = null;
+        currentTabId = null;
         await saveState();
-        setTimeout(processNextItem, 1000);
+
+        if (!isPaused) {
+            setTimeout(processNextItem, 1000);
+        } else {
+            isProcessing = false;
+        }
     }
 }
 
 function waitForTabLoad(tabId) {
     return new Promise(async resolve => {
+        let isResolved = false;
+        const done = () => {
+            if (isResolved) return;
+            isResolved = true;
+            chrome.tabs.onUpdated.removeListener(onUpdated);
+            chrome.tabs.onRemoved.removeListener(onRemoved);
+            resolve();
+        };
+
+        const onUpdated = (tId, changeInfo) => {
+            if (tId === tabId && changeInfo.status === 'complete') done();
+        };
+
+        const onRemoved = (tId) => {
+            if (tId === tabId) done();
+        };
+
         try {
             const tab = await chrome.tabs.get(tabId);
             if (tab && tab.status === 'complete') {
-                resolve();
+                done();
                 return;
             }
-        } catch (e) { resolve(); return; }
+        } catch (e) {
+            done();
+            return;
+        }
 
-        const check = (tId, changeInfo) => {
-            if (tId === tabId && changeInfo.status === 'complete') {
-                chrome.tabs.onUpdated.removeListener(check);
-                resolve();
-            }
-        };
-        chrome.tabs.onUpdated.addListener(check);
+        chrome.tabs.onUpdated.addListener(onUpdated);
+        chrome.tabs.onRemoved.addListener(onRemoved);
+
+        // Safety timeout
+        setTimeout(done, 30000);
     });
 }

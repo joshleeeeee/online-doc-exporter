@@ -5,7 +5,6 @@
     <meta charset="UTF-8">
     <link rel="stylesheet" href="css/popup.css">
     <script src="js/libs/jszip.min.js"></script>
-    <script src="popup.js"></script>
 </head>
 
 <body>
@@ -90,13 +89,6 @@
         <div id="batch-list" class="batch-list">
             <div class="empty-state">请先扫描当前页面以查找文档链接</div>
         </div>
-
-        <div id="batch-progress-container" style="display:none; margin-top:10px;">
-            <div class="progress-bar">
-                <div id="batch-progress-fill" class="fill" style="width:0%"></div>
-            </div>
-            <div id="batch-status-text" style="font-size:12px; color:#666; margin-top:4px;">准备就绪</div>
-        </div>
     </div>
 
     <!-- Manager Tab (Download Center) -->
@@ -130,6 +122,29 @@
 
         <div id="manager-list" class="manager-list">
             <div class="empty-state">暂无已下载的文件</div>
+        </div>
+    </div>
+
+    <!-- Global Progress (Bottom) -->
+    <div id="global-progress-area"
+        style="display:none; padding: 12px 16px; border-top: 1px solid #f0f0f0; background: #fff;">
+        <div id="batch-progress-container">
+            <div class="progress-bar">
+                <div id="batch-progress-fill" class="fill" style="width:0%"></div>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+                <div id="batch-status-text" style="font-size:12px; color:#646a73;">准备就绪</div>
+                <div class="progress-controls" style="display:flex; gap:8px;">
+                    <button id="btn-batch-pause" class="feishu-copy-btn small secondary"
+                        style="padding:4px 8px; height:24px; font-size:11px; display:none;">
+                        <span>暂停</span>
+                    </button>
+                    <button id="btn-batch-resume" class="feishu-copy-btn small secondary"
+                        style="padding:4px 8px; height:24px; font-size:11px; display:none;">
+                        <span>继续</span>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
