@@ -168,6 +168,57 @@
 
             <div class="settings-item">
                 <div class="settings-label">
+                    <div class="settings-title">图片上传图床 (OSS/MinIO)</div>
+                    <div class="settings-desc">自动将图片上传到云存储并替换链接。</div>
+                </div>
+                <label class="feishu-copy-toggle">
+                    <input type="checkbox" id="toggle-upload-image">
+                    <span class="feishu-copy-toggle-slider"></span>
+                </label>
+            </div>
+
+            <div id="image-upload-config"
+                style="display:none; background:#f7f8fa; padding:12px; border-radius:8px; margin-bottom:12px; border:1px solid #e1e4e8;">
+                <div class="input-row">
+                    <label>服务商</label>
+                    <select id="oss-provider" class="feishu-copy-input">
+                        <option value="aliyun">阿里云 OSS</option>
+                        <option value="s3">S3 / MinIO</option>
+                    </select>
+                </div>
+                <div class="input-row">
+                    <label>Endpoint</label>
+                    <input type="text" id="oss-endpoint" class="feishu-copy-input"
+                        placeholder="oss-cn-hangzhou.aliyuncs.com">
+                </div>
+                <div class="input-row">
+                    <label>AccessKey ID</label>
+                    <input type="text" id="oss-access-key" class="feishu-copy-input" placeholder="AccessKey ID">
+                </div>
+                <div class="input-row">
+                    <label>AccessKey Secret</label>
+                    <input type="password" id="oss-secret-key" class="feishu-copy-input" placeholder="AccessKey Secret">
+                </div>
+                <div class="input-row">
+                    <label>Bucket Name</label>
+                    <input type="text" id="oss-bucket" class="feishu-copy-input" placeholder="Bucket Name">
+                </div>
+                <div class="input-row">
+                    <label>Region</label>
+                    <input type="text" id="oss-region" class="feishu-copy-input" placeholder="e.g. cn-hangzhou (可选)">
+                </div>
+                <div class="input-row">
+                    <label>自定义域名 (可选)</label>
+                    <input type="text" id="oss-domain" class="feishu-copy-input" placeholder="https://cdn.example.com">
+                </div>
+                <div class="input-row">
+                    <label>存储路径 (可选)</label>
+                    <input type="text" id="oss-folder" class="feishu-copy-input" placeholder="e.g. feishu-docs/">
+                </div>
+            </div>
+
+            <div class="settings-item">
+                <div class="settings-label">
                     <div class="settings-title">前台运行批处理</div>
                     <div class="settings-desc">在当前激活的标签页中运行抓取任务。如果后台抓取不完整，请尝试开启此选项。</div>
                 </div>

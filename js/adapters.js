@@ -31,6 +31,33 @@ class BaseAdapter {
      */
     async processImage(src) {
         if (!src) return '';
+
+        // 1. Upload to OSS/MinIO
+        if (this.options.imageConfig && this.options.imageConfig.enabled) {
+            try {
+                let blob;
+                // Handle Data URI
+                if (src.startsWith('data:')) {
+                    const res = await fetch(src);
+                    blob = await res.blob();
+                } else {
+                    // Handle Remote URL
+                    blob = await ImageUtils.fetchBlob(src);
+                }
+
+                // Generate filename
+                const ext = blob.type.split('/')[1] || 'png';
+                const filename = `img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+                const newUrl = await ImageUploader.upload(blob, filename, this.options.imageConfig);
+                return newUrl;
+            } catch (e) {
+                console.error("Upload failed, falling back to original/base64", e);
+                // Fallback continues below
+            }
+        }
+
+        // 2. Base64
         if (this.options.useBase64 && !src.startsWith("data:")) {
             return await ImageUtils.urlToBase64(src);
         }

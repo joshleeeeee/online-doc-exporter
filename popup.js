@@ -62,6 +62,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const scrollSpeedValue = document.getElementById('scroll-speed-value');
     const toast = document.getElementById('toast');
 
+    // Image Upload Elements
+    const toggleUploadImage = document.getElementById('toggle-upload-image');
+    const imageUploadConfig = document.getElementById('image-upload-config');
+    const ossInputs = {
+        provider: document.getElementById('oss-provider'),
+        endpoint: document.getElementById('oss-endpoint'),
+        accessKeyId: document.getElementById('oss-access-key'),
+        accessKeySecret: document.getElementById('oss-secret-key'),
+        bucket: document.getElementById('oss-bucket'),
+        region: document.getElementById('oss-region'),
+        domain: document.getElementById('oss-domain'),
+        folder: document.getElementById('oss-folder')
+    };
+
     // Restore State
     const savedBase64 = localStorage.getItem('feishu-copy-base64');
     if (savedBase64 === 'true') toggleBase64.checked = true;
@@ -75,12 +89,56 @@ document.addEventListener('DOMContentLoaded', () => {
         scrollSpeedValue.innerText = (parseInt(savedScrollSpeed) / 1000).toFixed(1) + 's';
     }
 
+    const savedUploadImage = localStorage.getItem('feishu-copy-upload-image');
+    if (savedUploadImage === 'true') {
+        toggleUploadImage.checked = true;
+        imageUploadConfig.style.display = 'block';
+    }
+
+    // Restore OSS Config
+    const savedOssConfig = JSON.parse(localStorage.getItem('feishu-copy-oss-config') || '{}');
+    if (savedOssConfig) {
+        Object.keys(ossInputs).forEach(key => {
+            if (savedOssConfig[key] && ossInputs[key]) {
+                ossInputs[key].value = savedOssConfig[key];
+            }
+        });
+    }
+
     toggleBase64.addEventListener('change', () => {
         localStorage.setItem('feishu-copy-base64', toggleBase64.checked);
+        if (toggleBase64.checked && toggleUploadImage.checked) {
+            toggleUploadImage.checked = false;
+            localStorage.setItem('feishu-copy-upload-image', false);
+            imageUploadConfig.style.display = 'none';
+        }
     });
 
     toggleForeground.addEventListener('change', () => {
         localStorage.setItem('feishu-copy-foreground', toggleForeground.checked);
+    });
+
+    toggleUploadImage.addEventListener('change', () => {
+        const checked = toggleUploadImage.checked;
+        localStorage.setItem('feishu-copy-upload-image', checked);
+        imageUploadConfig.style.display = checked ? 'block' : 'none';
+
+        // Mutually exclusive: Uncheck Base64 if Upload is enabled
+        if (checked && toggleBase64.checked) {
+            toggleBase64.checked = false;
+            localStorage.setItem('feishu-copy-base64', false);
+        }
+    });
+
+    // Save OSS Config on change
+    Object.values(ossInputs).forEach(input => {
+        input.addEventListener('change', () => {
+            const config = {};
+            Object.keys(ossInputs).forEach(key => {
+                config[key] = ossInputs[key].value.trim();
+            });
+            localStorage.setItem('feishu-copy-oss-config', JSON.stringify(config));
+        });
     });
 
     inputScrollSpeed.addEventListener('input', () => {
@@ -121,6 +179,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const executeCopy = async (format) => {
         const useBase64 = toggleBase64.checked;
         const scrollWaitTime = parseInt(inputScrollSpeed.value) || 1500;
+
+        const imageConfig = {
+            enabled: toggleUploadImage.checked,
+            provider: ossInputs.provider.value,
+            endpoint: ossInputs.endpoint.value,
+            accessKeyId: ossInputs.accessKeyId.value,
+            accessKeySecret: ossInputs.accessKeySecret.value,
+            bucket: ossInputs.bucket.value,
+            region: ossInputs.region.value,
+            domain: ossInputs.domain.value,
+            folder: ossInputs.folder.value
+        };
+
         const btn = format === 'markdown' ? btnMarkdown : btnRich;
         const span = btn.querySelector('span');
         const originalText = span.innerText;
@@ -136,7 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await chrome.tabs.sendMessage(tab.id, {
                 action: 'EXTRACT_CONTENT',
                 format: format,
-                options: { useBase64, scrollWaitTime }
+                options: { useBase64, scrollWaitTime, imageConfig }
             });
 
             if (response && response.success) {
@@ -281,7 +352,18 @@ document.addEventListener('DOMContentLoaded', () => {
             options: {
                 useBase64: toggleBase64.checked,
                 foreground: toggleForeground.checked,
-                scrollWaitTime: parseInt(inputScrollSpeed.value) || 1500
+                scrollWaitTime: parseInt(inputScrollSpeed.value) || 1500,
+                imageConfig: {
+                    enabled: toggleUploadImage.checked,
+                    provider: ossInputs.provider.value,
+                    endpoint: ossInputs.endpoint.value,
+                    accessKeyId: ossInputs.accessKeyId.value,
+                    accessKeySecret: ossInputs.accessKeySecret.value,
+                    bucket: ossInputs.bucket.value,
+                    region: ossInputs.region.value,
+                    domain: ossInputs.domain.value,
+                    folder: ossInputs.folder.value
+                }
             }
         }, (res) => {
             if (res && res.success) {
