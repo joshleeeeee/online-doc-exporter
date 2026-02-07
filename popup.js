@@ -5,24 +5,44 @@ document.addEventListener('DOMContentLoaded', () => {
     if (versionEl) versionEl.innerText = `v${manifest.version}`;
 
     // --- Tabs Logic ---
+    // --- Tabs Logic ---
     const tabs = document.querySelectorAll('.tab-btn');
     const panes = document.querySelectorAll('.tab-pane');
+    const settingsBtn = document.getElementById('btn-settings-icon');
+
+    const switchTab = (targetId) => {
+        tabs.forEach(t => t.classList.remove('active'));
+        panes.forEach(p => p.classList.remove('active'));
+        if (settingsBtn) settingsBtn.classList.remove('active');
+
+        // Check if it is a main tab or settings
+        if (targetId === 'tab-settings') {
+            if (settingsBtn) settingsBtn.classList.add('active');
+            document.getElementById('tab-settings').classList.add('active');
+        } else {
+            const activeTab = document.querySelector(`.tab-btn[data-target="${targetId}"]`);
+            if (activeTab) activeTab.classList.add('active');
+            document.getElementById(targetId).classList.add('active');
+        }
+
+        // Refresh list if switching to manager
+        if (targetId === 'tab-manager') {
+            updateStatus();
+        }
+    };
 
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
-            tabs.forEach(t => t.classList.remove('active'));
-            panes.forEach(p => p.classList.remove('active'));
-
-            tab.classList.add('active');
             const targetId = tab.getAttribute('data-target');
-            document.getElementById(targetId).classList.add('active');
-
-            // Refresh list if switching to manager
-            if (targetId === 'tab-manager') {
-                updateStatus();
-            }
+            switchTab(targetId);
         });
     });
+
+    if (settingsBtn) {
+        settingsBtn.addEventListener('click', () => {
+            switchTab('tab-settings');
+        });
+    }
 
     // --- Initial State Recovery ---
     chrome.runtime.sendMessage({ action: 'GET_BATCH_STATUS' }, (res) => {
@@ -33,18 +53,26 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
 
-    // --- Single Copy Logic ---
+    // --- Single Copy Logic & Settings ---
     const btnMarkdown = document.getElementById('btn-markdown');
     const btnRich = document.getElementById('btn-rich');
     const toggleBase64 = document.getElementById('toggle-base64');
+    const toggleForeground = document.getElementById('toggle-foreground');
     const toast = document.getElementById('toast');
 
     // Restore State
-    const saved = localStorage.getItem('feishu-copy-base64');
-    if (saved === 'true') toggleBase64.checked = true;
+    const savedBase64 = localStorage.getItem('feishu-copy-base64');
+    if (savedBase64 === 'true') toggleBase64.checked = true;
+
+    const savedForeground = localStorage.getItem('feishu-copy-foreground');
+    if (savedForeground === 'true') toggleForeground.checked = true;
 
     toggleBase64.addEventListener('change', () => {
         localStorage.setItem('feishu-copy-base64', toggleBase64.checked);
+    });
+
+    toggleForeground.addEventListener('change', () => {
+        localStorage.setItem('feishu-copy-foreground', toggleForeground.checked);
     });
 
     const showToast = (msg) => {
@@ -232,7 +260,11 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.runtime.sendMessage({
             action: 'START_BATCH_PROCESS',
             items: selectedItems,
-            format: 'markdown'
+            format: 'markdown',
+            options: {
+                useBase64: toggleBase64.checked,
+                foreground: toggleForeground.checked
+            }
         }, (res) => {
             if (res && res.success) {
                 startPolling();

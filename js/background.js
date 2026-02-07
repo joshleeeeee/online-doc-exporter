@@ -137,7 +137,8 @@ async function processNextItem() {
     console.log('Processing:', taskUrl);
 
     try {
-        const tab = await chrome.tabs.create({ url: taskUrl, active: false });
+        const isForeground = currentItem.options && currentItem.options.foreground;
+        const tab = await chrome.tabs.create({ url: taskUrl, active: !!isForeground });
         currentTabId = tab.id;
 
         await waitForTabLoad(currentTabId);

@@ -327,11 +327,12 @@ class FeishuAdapter extends BaseAdapter {
 
             // 4. Scroll Logic
             // If we are already at bottom
-            if (Math.ceil(currentScroll + clientHeight) >= totalHeight - 20) {
+            if (Math.ceil(currentScroll + clientHeight) >= totalHeight - 50) {
                 // Check if height expanded (lazy load finished?)
                 // If total height didn't grow and we are at bottom, we are done
                 noNewContentCount++;
-                if (noNewContentCount > 2) break;
+                // Increase retry count to handle slow loading
+                if (noNewContentCount > 8) break;
             } else {
                 noNewContentCount = 0;
             }
@@ -341,7 +342,7 @@ class FeishuAdapter extends BaseAdapter {
             scrollTo(nextScroll);
 
             // 5. Wait for scroll/load
-            await new Promise(r => setTimeout(r, 1000)); // Wait 1s for lazy load
+            await new Promise(r => setTimeout(r, 1500)); // Wait 1.5s for lazy load
 
             // Check if we actually moved (if scroll stuck, we hit bottom)
             const newScroll = getCurrentScroll();
@@ -350,7 +351,7 @@ class FeishuAdapter extends BaseAdapter {
                 // But double check against height (sometimes height grows but scroll stays?)
                 // Just break if stuck
                 noNewContentCount++;
-                if (noNewContentCount > 2) break;
+                if (noNewContentCount > 8) break;
             }
             lastScrollTop = newScroll;
         }

@@ -1,5 +1,37 @@
 @import url("popup_main.css");
 
+/* Header overrides */
+.header {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+}
+
+.settings-icon-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+    color: #646a73;
+}
+
+.settings-icon-btn:hover {
+    background: #f0f1f3;
+}
+
+.settings-icon-btn.active svg {
+    stroke: #3370ff;
+}
+
+.settings-icon-btn.active {
+    background: #eff6ff;
+}
+
 /* CSS for Batch Tab UI */
 
 /* Tabs */
@@ -215,4 +247,38 @@
     100% {
         transform: rotate(360deg);
     }
+}
+
+/* Settings Page Styles */
+.settings-group {
+    padding: 10px 5px;
+}
+
+.settings-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 12px 10px;
+    background: #fff;
+    border: 1px solid #e1e4e8;
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+
+.settings-label {
+    flex: 1;
+    margin-right: 12px;
+}
+
+.settings-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: #1f2329;
+    margin-bottom: 4px;
+}
+
+.settings-desc {
+    font-size: 12px;
+    color: #8f959e;
+    line-height: 1.4;
 }
