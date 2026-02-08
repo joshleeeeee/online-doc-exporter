@@ -54,16 +54,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // --- Single Copy Logic & Settings ---
+    // --- Single Copy Logic & Settings ---
     const btnMarkdown = document.getElementById('btn-markdown');
     const btnRich = document.getElementById('btn-rich');
-    const toggleBase64 = document.getElementById('toggle-base64');
+    const selectImageMode = document.getElementById('select-image-mode');
     const toggleForeground = document.getElementById('toggle-foreground');
     const inputScrollSpeed = document.getElementById('input-scroll-speed');
     const scrollSpeedValue = document.getElementById('scroll-speed-value');
     const toast = document.getElementById('toast');
 
     // Image Upload Elements
-    const toggleUploadImage = document.getElementById('toggle-upload-image');
+    // const toggleUploadImage = document.getElementById('toggle-upload-image'); // Removed
     const imageUploadConfig = document.getElementById('image-upload-config');
     const ossInputs = {
         provider: document.getElementById('oss-provider'),
@@ -77,8 +78,20 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // Restore State
-    const savedBase64 = localStorage.getItem('feishu-copy-base64');
-    if (savedBase64 === 'true') toggleBase64.checked = true;
+    const savedMode = localStorage.getItem('feishu-copy-image-mode');
+    if (savedMode) {
+        selectImageMode.value = savedMode;
+    } else {
+        // Migration from old toggles
+        const oldBase64 = localStorage.getItem('feishu-copy-base64') === 'true';
+        const oldUpload = localStorage.getItem('feishu-copy-upload-image') === 'true';
+        if (oldUpload) selectImageMode.value = 'minio';
+        else if (oldBase64) selectImageMode.value = 'base64';
+        else selectImageMode.value = 'original';
+    }
+
+    // Set initial visibility
+    imageUploadConfig.style.display = (selectImageMode.value === 'minio') ? 'block' : 'none';
 
     const savedForeground = localStorage.getItem('feishu-copy-foreground');
     if (savedForeground === 'true') toggleForeground.checked = true;
@@ -89,11 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
         scrollSpeedValue.innerText = (parseInt(savedScrollSpeed) / 1000).toFixed(1) + 's';
     }
 
-    const savedUploadImage = localStorage.getItem('feishu-copy-upload-image');
-    if (savedUploadImage === 'true') {
-        toggleUploadImage.checked = true;
-        imageUploadConfig.style.display = 'block';
-    }
+    // (Old upload restore removed, handled by mode)
 
     // Restore OSS Config
     const savedOssConfig = JSON.parse(localStorage.getItem('feishu-copy-oss-config') || '{}');
@@ -105,12 +114,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    toggleBase64.addEventListener('change', () => {
-        localStorage.setItem('feishu-copy-base64', toggleBase64.checked);
-        if (toggleBase64.checked && toggleUploadImage.checked) {
-            toggleUploadImage.checked = false;
-            localStorage.setItem('feishu-copy-upload-image', false);
-            imageUploadConfig.style.display = 'none';
+    selectImageMode.addEventListener('change', () => {
+        const mode = selectImageMode.value;
+        localStorage.setItem('feishu-copy-image-mode', mode);
+        imageUploadConfig.style.display = (mode === 'minio') ? 'block' : 'none';
+
+        // Notify if local mode is selected in Single Tab (optional UX improvement)
+        if (mode === 'local') {
+            // Maybe show a hint that local mode works best with Download Center?
         }
     });
 
@@ -118,17 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('feishu-copy-foreground', toggleForeground.checked);
     });
 
-    toggleUploadImage.addEventListener('change', () => {
-        const checked = toggleUploadImage.checked;
-        localStorage.setItem('feishu-copy-upload-image', checked);
-        imageUploadConfig.style.display = checked ? 'block' : 'none';
-
-        // Mutually exclusive: Uncheck Base64 if Upload is enabled
-        if (checked && toggleBase64.checked) {
-            toggleBase64.checked = false;
-            localStorage.setItem('feishu-copy-base64', false);
-        }
-    });
+    // Removed old toggle listeners
 
     // Save OSS Config on change
     Object.values(ossInputs).forEach(input => {
@@ -177,11 +178,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const executeCopy = async (format) => {
-        const useBase64 = toggleBase64.checked;
+        const imageMode = selectImageMode.value; // 'original', 'base64', 'local', 'minio'
         const scrollWaitTime = parseInt(inputScrollSpeed.value) || 1500;
 
         const imageConfig = {
-            enabled: toggleUploadImage.checked,
+            enabled: (imageMode === 'minio'),
             provider: ossInputs.provider.value,
             endpoint: ossInputs.endpoint.value,
             accessKeyId: ossInputs.accessKeyId.value,
@@ -207,7 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await chrome.tabs.sendMessage(tab.id, {
                 action: 'EXTRACT_CONTENT',
                 format: format,
-                options: { useBase64, scrollWaitTime, imageConfig }
+                options: { imageMode, scrollWaitTime, imageConfig }
             });
 
             if (response && response.success) {
@@ -350,11 +351,11 @@ document.addEventListener('DOMContentLoaded', () => {
             items: selectedItems,
             format: 'markdown',
             options: {
-                useBase64: toggleBase64.checked,
+                imageMode: selectImageMode.value,
                 foreground: toggleForeground.checked,
                 scrollWaitTime: parseInt(inputScrollSpeed.value) || 1500,
                 imageConfig: {
-                    enabled: toggleUploadImage.checked,
+                    enabled: (selectImageMode.value === 'minio'),
                     provider: ossInputs.provider.value,
                     endpoint: ossInputs.endpoint.value,
                     accessKeyId: ossInputs.accessKeyId.value,
@@ -553,6 +554,19 @@ document.addEventListener('DOMContentLoaded', () => {
             res.results.forEach(item => {
                 if (item.status === 'success') {
                     const filename = item.title.replace(/[\\/:*?"<>|]/g, "_") + ".md";
+
+                    // Handle Images Logic
+                    // item.images is expected to be [ { filename: '...', base64: '...' }, ... ]
+                    if (item.images && item.images.length > 0) {
+                        const imgFolder = zip.folder("images");
+                        item.images.forEach(img => {
+                            if (img.base64 && img.base64.includes(',')) {
+                                const base64Data = img.base64.split(',')[1];
+                                imgFolder.file(img.filename, base64Data, { base64: true });
+                            }
+                        });
+                    }
+
                     zip.file(filename, item.content);
                     count++;
                 }

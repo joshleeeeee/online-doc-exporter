@@ -174,24 +174,16 @@
         <div class="settings-group">
             <div class="settings-item">
                 <div class="settings-label">
-                    <div class="settings-title">Base64 图片转码</div>
-                    <div class="settings-desc">将图片转换为 Base64 编码嵌入文档，避免防盗链失效。</div>
+                    <div class="settings-title">图片处理模式</div>
+                    <div class="settings-desc">选择导出时如何处理文档中的图片。</div>
                 </div>
-                <label class="feishu-copy-toggle">
-                    <input type="checkbox" id="toggle-base64">
-                    <span class="feishu-copy-toggle-slider"></span>
-                </label>
-            </div>
-
-            <div class="settings-item">
-                <div class="settings-label">
-                    <div class="settings-title">图片上传图床 (OSS/MinIO)</div>
-                    <div class="settings-desc">自动将图片上传到云存储并替换链接。</div>
-                </div>
-                <label class="feishu-copy-toggle">
-                    <input type="checkbox" id="toggle-upload-image">
-                    <span class="feishu-copy-toggle-slider"></span>
-                </label>
+                <!-- Dropdown -->
+                <select id="select-image-mode" class="feishu-copy-input" style="width:140px;">
+                    <option value="original">保持原链接 (默认)</option>
+                    <option value="base64">转为 Base64 (内嵌)</option>
+                    <option value="local">下载到本地 (ZIP)</option>
+                    <option value="minio">上传到图床 (OSS)</option>
+                </select>
             </div>
 
             <div id="image-upload-config"

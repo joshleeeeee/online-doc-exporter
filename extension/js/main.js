@@ -12,7 +12,14 @@ class App {
             chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 if (request.action === 'EXTRACT_CONTENT') {
                     App.handleExtraction(request.format, request.options)
-                        .then(content => sendResponse({ success: true, content }))
+                        .then(result => {
+                            // Support returning object { content, images } or just string
+                            if (typeof result === 'object' && result.content) {
+                                sendResponse({ success: true, ...result });
+                            } else {
+                                sendResponse({ success: true, content: result });
+                            }
+                        })
                         .catch(error => sendResponse({ success: false, error: error.message }));
 
                     return true;

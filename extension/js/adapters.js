@@ -15,6 +15,7 @@ class BaseAdapter {
     constructor(format, options = {}) {
         this.format = format;
         this.options = options;
+        this.images = []; // Store images for local zip mode
     }
 
     /**
@@ -32,8 +33,10 @@ class BaseAdapter {
     async processImage(src) {
         if (!src) return '';
 
+        const mode = this.options.imageMode || 'original';
+
         // 1. Upload to OSS/MinIO
-        if (this.options.imageConfig && this.options.imageConfig.enabled) {
+        if (mode === 'minio' && this.options.imageConfig && this.options.imageConfig.enabled) {
             try {
                 let blob;
                 // Handle Data URI
@@ -58,9 +61,44 @@ class BaseAdapter {
         }
 
         // 2. Base64
-        if (this.options.useBase64 && !src.startsWith("data:")) {
+        if (mode === 'base64' && !src.startsWith("data:")) {
             return await ImageUtils.urlToBase64(src);
         }
+
+        // 3. Local (ZIP)
+        if (mode === 'local') {
+            try {
+                // Determine blob
+                let blob;
+                if (src.startsWith('data:')) {
+                    const res = await fetch(src);
+                    blob = await res.blob();
+                } else {
+                    blob = await ImageUtils.fetchBlob(src);
+                }
+
+                const ext = blob.type.split('/')[1] || 'png';
+                const filename = `image_${this.images.length + 1}_${Date.now().toString().slice(-4)}.${ext}`;
+
+                // Convert to Base64 for transfer to popup
+                const reader = new FileReader();
+                const base64 = await new Promise((resolve) => {
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                });
+
+                this.images.push({
+                    filename: filename,
+                    base64: base64
+                });
+
+                return `images/${filename}`;
+            } catch (e) {
+                console.warn("Local image fetch failed", e);
+                return src; // Fallback to original
+            }
+        }
+
         return src;
     }
 }
@@ -394,7 +432,10 @@ class FeishuAdapter extends BaseAdapter {
             console.warn("No content blocks found even after scroll");
         }
 
-        return output;
+        return {
+            content: output,
+            images: this.images
+        };
     }
 
     extractCodeBlock(block) {

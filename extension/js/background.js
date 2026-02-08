@@ -198,6 +198,7 @@ async function processNextItem() {
                 url: taskUrl,
                 title: title.trim(),
                 content: response.content,
+                images: response.images || [],
                 status: 'success',
                 timestamp: Date.now()
             });
