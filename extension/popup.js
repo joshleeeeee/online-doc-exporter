@@ -375,8 +375,10 @@ document.addEventListener('DOMContentLoaded', () => {
             div.innerHTML = `
                 <label style="display:flex; align-items:center; width:100%; cursor:pointer;">
                     <input type="checkbox" class="batch-checkbox" value="${index}" ${checkedState} style="margin-right:8px; flex-shrink:0;">
-                    <span class="batch-item-text" style="${titleStyle}; flex:1; min-width:0; margin-right:4px;" title="${item.title}">${item.title}</span>
-                    ${extraText}
+                    <div style="flex:1; min-width:0; line-height:1.4;">
+                        <span class="batch-item-text" style="${titleStyle}; white-space:normal; word-break:break-all;" title="${item.title}">${item.title}</span>
+                        ${extraText}
+                    </div>
                 </label>
             `;
             listContainer.appendChild(div);
@@ -657,7 +659,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div style="display:flex; align-items:center; flex:1; min-width:0;">
                     ${checkboxHtml}
                     ${statusIcon}
-                    <div style="display:flex; flex-direction:column; overflow:hidden;">
+                    <div style="display:flex; flex-direction:column; overflow:hidden; flex:1;">
                          <span class="batch-item-text" style="color:${statusColor}">${title}${status === 'processing' ? ' (抓取中...)' : (status === 'pending' ? ' (等待中)' : '')}</span>
                     </div>
                     ${sizeText}
