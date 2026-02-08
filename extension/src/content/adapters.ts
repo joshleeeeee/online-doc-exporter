@@ -131,7 +131,7 @@ export class FeishuAdapter extends BaseAdapter {
                     let token = (typePath === 'wiki') ? (nodeTokenAttr || objTokenAttr) : (objTokenAttr || nodeTokenAttr);
 
                     if (token) {
-                        token = token.includes(':') ? token.split(':').pop() : token;
+                        token = (token.includes(':') ? token.split(':').pop() : token) || '';
                         url = `${window.location.origin}/${typePath}/${token}`;
                     }
                 }

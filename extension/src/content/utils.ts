@@ -49,9 +49,9 @@ export class CryptoUtils {
         return signature;
     }
 
-    static async hmacSha256(key: string | Uint8Array, dataString: string): Promise<ArrayBuffer> {
+    static async hmacSha256(key: string | Uint8Array | ArrayBuffer, dataString: string): Promise<ArrayBuffer> {
         const encoder = new TextEncoder();
-        let keyData: Uint8Array;
+        let keyData: Uint8Array | ArrayBuffer;
         if (typeof key === 'string') {
             keyData = encoder.encode(key);
         } else {
@@ -59,7 +59,7 @@ export class CryptoUtils {
         }
 
         const algorithm: HmacImportParams = { name: "HMAC", hash: "SHA-256" };
-        const cryptoKey = await crypto.subtle.importKey("raw", keyData, algorithm, false, ["sign"]);
+        const cryptoKey = await crypto.subtle.importKey("raw", keyData as any, algorithm, false, ["sign"]);
         const signature = await crypto.subtle.sign(algorithm.name, cryptoKey, encoder.encode(dataString));
         return signature; // ArrayBuffer
     }
@@ -69,12 +69,10 @@ export class CryptoUtils {
         let buffer: Uint8Array | ArrayBuffer;
         if (typeof data === 'string') {
             buffer = encoder.encode(data);
-        } else if (data instanceof ArrayBuffer) {
-            buffer = data;
         } else {
             buffer = data;
         }
-        const hash = await crypto.subtle.digest("SHA-256", buffer);
+        const hash = await crypto.subtle.digest("SHA-256", buffer as any);
         return hash; // ArrayBuffer
     }
 

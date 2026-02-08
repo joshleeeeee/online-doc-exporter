@@ -47,7 +47,7 @@ const preparePromise = new Promise<void>((resolve) => {
             isProcessing = true
             processNextItem()
         } else {
-            isProcessing = (data ? data.isProcessing : false) || false
+            isProcessing = !!(data ? data.isProcessing : false)
         }
         isReady = true
         resolve()
