@@ -252,6 +252,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const listContainer = document.getElementById('batch-list');
     const managerList = document.getElementById('manager-list');
     const checkAll = document.getElementById('batch-check-all');
+    const managerCheckAll = document.getElementById('manager-check-all');
+    const managerTotalSizeLabel = document.getElementById('manager-total-size');
+
     const countLabel = document.getElementById('batch-count');
 
     const progressContainer = document.getElementById('batch-progress-container');
@@ -387,6 +390,88 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // --- Manager Selection Logic ---
+    const MAX_ZIP_SIZE_MB = 300;
+
+    // Helper to calculate estimated size
+    const calculateSize = (item) => {
+        let size = 0;
+        if (item.content) size += item.content.length;
+        if (item.images) {
+            item.images.forEach(img => {
+                if (img.base64) size += img.base64.length;
+            });
+        }
+        return size;
+    };
+
+    const formatSize = (bytes) => {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    };
+
+    const updateManagerSelection = () => {
+        const checkboxes = document.querySelectorAll('.manager-checkbox:checked');
+        let totalSize = 0;
+
+        checkboxes.forEach(cb => {
+            const size = parseInt(cb.getAttribute('data-size') || '0');
+            totalSize += size;
+        });
+
+        const sizeMB = (totalSize / (1024 * 1024)).toFixed(1);
+        managerTotalSizeLabel.innerText = `已选: ${sizeMB} MB / 限制: ${MAX_ZIP_SIZE_MB} MB`;
+
+        if (totalSize > MAX_ZIP_SIZE_MB * 1024 * 1024) {
+            managerTotalSizeLabel.style.color = '#ef4444';
+        } else {
+            managerTotalSizeLabel.style.color = '#666';
+        }
+
+        btnDownloadZip.disabled = checkboxes.length === 0;
+
+        // Update check-all state
+        const allCheckboxes = document.querySelectorAll('.manager-checkbox:not([disabled])');
+        if (allCheckboxes.length > 0) {
+            managerCheckAll.checked = checkboxes.length === allCheckboxes.length;
+            managerCheckAll.disabled = false;
+        } else {
+            managerCheckAll.checked = false;
+            managerCheckAll.disabled = true;
+        }
+    };
+
+    managerCheckAll.addEventListener('change', () => {
+        const checkboxes = document.querySelectorAll('.manager-checkbox:not([disabled])');
+        const isChecked = managerCheckAll.checked;
+
+        if (isChecked) {
+            // Try to select all, stop if limit reached
+            let currentTotal = 0;
+            const limitBytes = MAX_ZIP_SIZE_MB * 1024 * 1024;
+            let stopped = false;
+
+            checkboxes.forEach(cb => {
+                const size = parseInt(cb.getAttribute('data-size') || '0');
+                if (currentTotal + size <= limitBytes) {
+                    cb.checked = true;
+                    currentTotal += size;
+                } else {
+                    cb.checked = false;
+                    stopped = true;
+                }
+            });
+
+            if (stopped) {
+                showToast(`已达到 ${MAX_ZIP_SIZE_MB}MB 限制，部分文档未选中`);
+            }
+        } else {
+            checkboxes.forEach(cb => cb.checked = false);
+        }
+        updateManagerSelection();
+    });
+
     // --- Status & Rendering ---
     const updateStatus = () => {
         chrome.runtime.sendMessage({ action: 'GET_BATCH_STATUS' }, (res) => {
@@ -444,7 +529,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Update Manager Tab
             renderManagerList(results, currentItem, queueList);
-            btnDownloadZip.disabled = !results.some(r => r.status === 'success');
+            // btnDownloadZip.disabled update is handled inside renderManagerList/updateManagerSelection
         });
     };
 
@@ -464,7 +549,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Helper to create list items
-        const createItemEl = (title, status, url, content = null) => {
+        const createItemEl = (title, status, url, content = null, images = []) => {
             const div = document.createElement('div');
             div.className = 'batch-item';
             div.style.justifyContent = 'space-between';
@@ -472,10 +557,23 @@ document.addEventListener('DOMContentLoaded', () => {
             let statusIcon = '';
             let statusColor = '#1f2329';
             let actions = '';
+            let checkboxHtml = '';
+
+            // Calculate size if success
+            let size = 0;
+            let sizeText = '';
+
+            if (status === 'success') {
+                size = calculateSize({ content, images });
+                sizeText = `<span style="font-size:11px; color:#8f959e; margin-left:8px;">(${formatSize(size)})</span>`;
+                checkboxHtml = `<input type="checkbox" class="manager-checkbox" data-url="${url}" data-size="${size}" style="margin-right:8px;">`;
+            } else {
+                checkboxHtml = `<span style="width:13px; margin-right:8px; display:inline-block;"></span>`; // Spacer
+            }
 
             if (status === 'success') {
                 statusIcon = `<svg viewBox="0 0 24 24" fill="none" width="16" height="16" style="margin-right:8px"><path d="M22 11.08V12C21.9988 14.1564 21.3005 16.2547 20.0093 17.9888C18.7182 19.7228 16.9033 20.9972 14.8354 21.6226C12.7674 22.2479 10.5501 22.2031 8.51131 21.4939C6.47257 20.7848 4.7182 19.4471 3.51187 17.6835C2.30555 15.9199 1.71181 13.8214 1.81596 11.7019C1.92011 9.58232 2.71677 7.55024 4.08502 5.9103C5.45328 4.27035 7.31961 3.11196 9.40017 2.61099C11.4807 2.11003 13.6654 2.2929 15.63 3.13" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 4L12 14.01L9 11.01" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-                actions = `<button class="btn-item-download" data-url="${url}" title="下载"><svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 10L12 15L17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
+                actions = `<button class="btn-item-download" data-url="${url}" title="单独下载"><svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 10L12 15L17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
             } else if (status === 'failed') {
                 statusIcon = `<svg viewBox="0 0 24 24" fill="none" width="16" height="16" style="margin-right:8px"><circle cx="12" cy="12" r="10" stroke="#ef4444" stroke-width="2"/><line x1="15" y1="9" x2="9" y2="15" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/><line x1="9" y1="9" x2="15" y2="15" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/></svg>`;
                 statusColor = '#ef4444';
@@ -492,8 +590,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             div.innerHTML = `
                 <div style="display:flex; align-items:center; flex:1; min-width:0;">
+                    ${checkboxHtml}
                     ${statusIcon}
-                    <span class="batch-item-text" style="color:${statusColor}">${title}${status === 'processing' ? ' (抓取中...)' : (status === 'pending' ? ' (等待中)' : '')}</span>
+                    <div style="display:flex; flex-direction:column; overflow:hidden;">
+                         <span class="batch-item-text" style="color:${statusColor}">${title}${status === 'processing' ? ' (抓取中...)' : (status === 'pending' ? ' (等待中)' : '')}</span>
+                    </div>
+                    ${sizeText}
                 </div>
                 <div class="manager-actions">
                     ${actions}
@@ -513,12 +615,34 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // 3. Show Results (sorted)
+        // 3. Show Results (sorted)
         const sorted = [...results].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         sorted.forEach(item => {
-            managerList.appendChild(createItemEl(item.title, item.status, item.url, item.content));
+            managerList.appendChild(createItemEl(item.title, item.status, item.url, item.content, item.images));
         });
 
         // Delegate clicks
+        managerList.querySelectorAll('.manager-checkbox').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                const currentTotal = parseFloat(managerTotalSizeLabel.innerText.split(' ')[1]) * 1024 * 1024; // loose parsing, better re-calc
+                const size = parseInt(cb.getAttribute('data-size'));
+                const limitBytes = MAX_ZIP_SIZE_MB * 1024 * 1024;
+
+                // Re-calculate real total
+                let realTotal = 0;
+                document.querySelectorAll('.manager-checkbox:checked').forEach(c => realTotal += parseInt(c.getAttribute('data-size')));
+
+                if (realTotal > limitBytes && cb.checked) {
+                    e.preventDefault();
+                    cb.checked = false;
+                    showToast(`已达到 ${MAX_ZIP_SIZE_MB}MB 限制，无法继续选择`);
+                }
+                updateManagerSelection();
+            });
+        });
+
+        // Initial stat update
+        updateManagerSelection();
         managerList.querySelectorAll('.btn-item-download').forEach(btn => {
             btn.onclick = () => {
                 const url = btn.getAttribute('data-url');
@@ -547,16 +671,31 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     btnDownloadZip.addEventListener('click', () => {
+        const checkboxes = document.querySelectorAll('.manager-checkbox:checked');
+        if (checkboxes.length === 0) {
+            showToast('请选择要下载的文件');
+            return;
+        }
+
+        const selectedUrls = new Set(Array.from(checkboxes).map(cb => cb.getAttribute('data-url')));
+
         chrome.runtime.sendMessage({ action: 'GET_BATCH_STATUS' }, async (res) => {
             if (!res || !res.results) return;
             const zip = new JSZip();
             let count = 0;
+
+            // Only process selected items
             res.results.forEach(item => {
-                if (item.status === 'success') {
-                    const filename = item.title.replace(/[\\/:*?"<>|]/g, "_") + ".md";
+                if (item.status === 'success' && selectedUrls.has(item.url)) {
+                    // Safe filename
+                    let safeTitle = item.title.replace(/[\\/:*?"<>|]/g, "_");
+                    // avoid duplicates in same zip
+                    if (zip.file(safeTitle + ".md")) {
+                        safeTitle += `_${Date.now().toString().slice(-4)}`;
+                    }
+                    const filename = safeTitle + ".md";
 
                     // Handle Images Logic
-                    // item.images is expected to be [ { filename: '...', base64: '...' }, ... ]
                     if (item.images && item.images.length > 0) {
                         const imgFolder = zip.folder("images");
                         item.images.forEach(img => {
@@ -571,6 +710,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     count++;
                 }
             });
+
             if (count === 0) {
                 showToast('没有抓取成功的文件');
                 return;

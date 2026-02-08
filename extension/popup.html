@@ -124,7 +124,7 @@
                         stroke-linejoin="round" />
                     <path d="M12 15V3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
-                <span>打包下载</span>
+                <span>打包已选</span>
             </button>
             <button id="btn-clear-all" class="feishu-copy-btn small secondary">
                 <svg viewBox="0 0 24 24" fill="none" width="14" height="14" style="margin-right:6px">
@@ -139,6 +139,12 @@
                 </svg>
                 <span>清空历史</span>
             </button>
+        </div>
+
+        <div class="batch-options">
+            <label><input type="checkbox" id="manager-check-all"> 全选</label>
+            <span id="manager-total-size" style="font-size:12px; color:#666;" title="为防止浏览器崩溃，限制最大打包体积">0 MB / 300
+                MB</span>
         </div>
 
         <div id="manager-list" class="manager-list">
