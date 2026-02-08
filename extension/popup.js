@@ -65,6 +65,58 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- Site Support Detection ---
+    const supportStatus = document.getElementById('support-status');
+    const supportStatusText = supportStatus.querySelector('.status-text');
+    const actionButtons = ['btn-markdown', 'btn-rich', 'btn-scan'];
+
+    const checkSupport = () => {
+        supportStatus.className = 'support-status detecting';
+        supportStatusText.innerText = '正在检测网页支持情况...';
+
+        chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+            if (!tab || !tab.url) {
+                updateSupportUI(false, '无法获取网页信息');
+                return;
+            }
+
+            const url = tab.url.toLowerCase();
+            const isFeishu = url.includes('feishu.cn') || url.includes('larksuite.com');
+            const isBoss = url.includes('zhipin.com');
+
+            if (isFeishu) {
+                updateSupportUI(true, '当前网页支持：飞书/Lark 文档');
+            } else if (isBoss) {
+                updateSupportUI(true, '当前网页支持：BOSS 直聘职位');
+            } else {
+                updateSupportUI(false, '当前网页不受支持');
+            }
+        });
+    };
+
+    const updateSupportUI = (isSupported, message) => {
+        supportStatus.className = `support-status ${isSupported ? 'supported' : 'unsupported'}`;
+        supportStatusText.innerText = message;
+
+        actionButtons.forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) {
+                btn.disabled = !isSupported;
+                if (!isSupported) {
+                    btn.style.opacity = '0.5';
+                    btn.style.cursor = 'not-allowed';
+                    btn.title = '当前网页不受支持';
+                } else {
+                    btn.style.opacity = '1';
+                    btn.style.cursor = 'pointer';
+                    btn.title = '';
+                }
+            }
+        });
+    };
+
+    checkSupport();
+
     // --- Initial State Recovery ---
     chrome.runtime.sendMessage({ action: 'GET_BATCH_STATUS' }, (res) => {
         if (res && (res.isProcessing || res.queueLength > 0)) {
@@ -80,6 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnRich = document.getElementById('btn-rich');
     const selectImageMode = document.getElementById('select-image-mode');
     const toggleForeground = document.getElementById('toggle-foreground');
+    const toggleMergeBatch = document.getElementById('toggle-merge-batch');
     const inputScrollSpeed = document.getElementById('input-scroll-speed');
     const scrollSpeedValue = document.getElementById('scroll-speed-value');
     const toast = document.getElementById('toast');
@@ -117,6 +170,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const savedForeground = localStorage.getItem('feishu-copy-foreground');
     if (savedForeground === 'true') toggleForeground.checked = true;
 
+    // Context-aware default for Merge Batch
+    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+        if (tab && tab.url) {
+            const url = tab.url.toLowerCase();
+            if (url.includes('zhipin.com')) {
+                toggleMergeBatch.checked = true;
+            } else if (url.includes('feishu.cn') || url.includes('larksuite.com')) {
+                toggleMergeBatch.checked = false;
+            } else {
+                // Fallback to saved preference for other sites
+                const savedMergeBatch = localStorage.getItem('feishu-copy-merge-batch');
+                if (savedMergeBatch === 'true') toggleMergeBatch.checked = true;
+            }
+            // Trigger change recording if needed, but usually we just want the UI to match
+            localStorage.setItem('feishu-copy-merge-batch', toggleMergeBatch.checked);
+        }
+    });
+
     const savedScrollSpeed = localStorage.getItem('feishu-copy-scroll-speed');
     if (savedScrollSpeed) {
         inputScrollSpeed.value = savedScrollSpeed;
@@ -148,6 +219,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     toggleForeground.addEventListener('change', () => {
         localStorage.setItem('feishu-copy-foreground', toggleForeground.checked);
+    });
+
+    toggleMergeBatch.addEventListener('change', () => {
+        localStorage.setItem('feishu-copy-merge-batch', toggleMergeBatch.checked);
     });
 
     // Removed old toggle listeners
@@ -804,6 +879,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
         chrome.runtime.sendMessage({ action: 'GET_FULL_RESULTS', urls: selectedUrls }, async (res) => {
             if (!res || !res.results) return;
+
+            const isMerge = toggleMergeBatch.checked;
+
+            if (isMerge) {
+                let combinedContent = "";
+                let count = 0;
+                // Results are already sorted by timestamp in the manager list, 
+                // but let's sort them here correctly if needed or keep order.
+                const sortedResults = [...res.results].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+                sortedResults.forEach(item => {
+                    if (item.status === 'success' && selectedUrls.includes(item.url)) {
+                        combinedContent += item.content + "\n\n---\n\n";
+                        count++;
+                    }
+                });
+
+                if (count === 0) {
+                    showToast('没有抓取成功的内容');
+                    return;
+                }
+
+                const blob = new Blob([combinedContent], { type: 'text/markdown' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `合并导出_${new Date().toISOString().slice(0, 10)}.md`;
+                a.click();
+                URL.revokeObjectURL(url);
+                return;
+            }
+
             const zip = new JSZip();
             let count = 0;
 
@@ -842,7 +949,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `飞书批量导出_${new Date().toISOString().slice(0, 10)}.zip`;
+            a.download = `批量导出_${new Date().toISOString().slice(0, 10)}.zip`;
             a.click();
             URL.revokeObjectURL(url);
         });

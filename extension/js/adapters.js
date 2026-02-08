@@ -4,8 +4,9 @@ class PlatformAdapterFactory {
         const hostname = window.location.hostname;
         if (hostname.includes("feishu.cn") || hostname.includes("larksuite.com")) {
             return new FeishuAdapter(format, options);
-            // More platforms can be added here
-            // case 'dingtalk.com': return DingTalkAdapter(format, options);
+        }
+        if (hostname.includes("zhipin.com")) {
+            return new BossZhipinAdapter(format, options);
         }
         return null;
     }
@@ -815,3 +816,171 @@ class FeishuAdapter extends BaseAdapter {
         return tableOut;
     }
 }
+
+class BossZhipinAdapter extends BaseAdapter {
+    async scanLinks() {
+        console.log('BossZhipinAdapter: Starting link scan...');
+        const results = [];
+        const links = new Set();
+
+        // Selectors for Boss Zhipin job list (search results, company jobs etc.)
+        const selectors = [
+            '.job-card-box',
+            '.job-card-wrap',
+            '.job-list-item',
+            'li[data-v-0c0e192e]' // Specific from user snippet
+        ];
+
+        const nodes = document.querySelectorAll(selectors.join(', '));
+        console.log(`BossZhipinAdapter: Found ${nodes.length} potential cards.`);
+
+        nodes.forEach(card => {
+            const linkNode = card.querySelector('.job-name') || card.querySelector('a[href*="/job_detail/"]');
+            if (!linkNode) return;
+
+            let url = linkNode.href;
+            if (!url) {
+                const hrefAttr = linkNode.getAttribute('href');
+                if (hrefAttr) url = window.location.origin + hrefAttr;
+            }
+
+            if (!url || typeof url !== 'string') return;
+
+            // Normalize URL
+            url = url.split('?')[0].split('#')[0];
+            if (url.startsWith('/')) url = window.location.origin + url;
+
+            if (links.has(url)) return;
+            links.add(url);
+
+            // Extract metadata for the title
+            const jobName = linkNode.textContent.trim();
+            const salary = card.querySelector('.job-salary')?.textContent.trim() || '';
+            const tags = Array.from(card.querySelectorAll('.tag-list li')).map(li => li.textContent.trim()).join('|') ||
+                Array.from(card.querySelectorAll('.job-labels li')).map(li => li.textContent.trim()).join('|');
+            const company = card.querySelector('.boss-name')?.textContent.trim() || card.querySelector('.company-name')?.textContent.trim() || '';
+            const location = card.querySelector('.company-location')?.textContent.trim() || card.querySelector('.job-area')?.textContent.trim() || '';
+
+            // User requested task format: Job Name + Salary + Tags + Company + Location
+            const title = `${jobName} [${salary}] [${tags}] - ${company} (${location})`.trim();
+
+            results.push({ title, url });
+        });
+
+        console.log(`BossZhipinAdapter: Scan complete. Found ${results.length} jobs.`);
+        return results;
+    }
+
+    async extract() {
+        console.log('BossZhipinAdapter: Extracting content...');
+
+        // Detail page selectors
+        const selectors = {
+            title: ['.job-banner .name h1', '.name h1', 'h1'],
+            salary: ['.job-banner .salary', '.salary'],
+            description: ['.job-sec-text', '.job-detail .text', '.detail-content'],
+            company: [
+                '.sider-company .company-info a:not([ka*="logo"])',
+                '.company-info .name',
+                '.sidebar-section .company-info .name',
+                '.sider-company .name',
+                '.job-boss-info .boss-info-attr'
+            ],
+            location: ['.location-address', '.job-location-map .text', '.job-location .text'],
+            experience: ['.text-experiece', '.text-experience'],
+            degree: ['.text-degree']
+        };
+
+        const extractText = (sList) => {
+            for (const s of sList) {
+                const el = document.querySelector(s);
+                if (el) {
+                    // Special case for company links with title attribute
+                    if (s.includes('company-info a') && el.getAttribute('title')) {
+                        return el.getAttribute('title').trim();
+                    }
+                    let text = el.textContent.trim();
+                    // Special case for boss info attr: "Company Name · Job Title"
+                    if (s.includes('boss-info-attr') && text.includes('·')) {
+                        return text.split('·')[0].trim();
+                    }
+                    return text;
+                }
+            }
+            return '';
+        };
+
+        const jobTitle = extractText(selectors.title) || document.title.split('_')[0];
+        const salary = extractText(selectors.salary);
+        const company = extractText(selectors.company);
+        const location = extractText(selectors.location);
+        const experience = extractText(selectors.experience);
+        const degree = extractText(selectors.degree);
+
+        let descHtml = '';
+        for (const s of selectors.description) {
+            const el = document.querySelector(s);
+            if (el) {
+                // Clone to clean noise without affecting page
+                const clone = el.cloneNode(true);
+                // Remove Boss anti-scraping noise tokens
+                const noise = clone.querySelectorAll('span, i, em, b');
+                noise.forEach(n => {
+                    if (n.textContent.includes('BOSS直聘') || n.textContent === '直聘') {
+                        n.remove();
+                    }
+                });
+                descHtml = clone.innerHTML;
+                break;
+            }
+        }
+
+        let output = "";
+        if (this.format === "markdown") {
+            output = `# ${jobTitle}\n\n`;
+            if (salary) output += `**薪资**: ${salary}\n`;
+            if (company) output += `**公司**: ${company}\n`;
+            if (location) output += `**地点**: ${location}\n`;
+            if (experience || degree) output += `**要求**: ${experience}${experience && degree ? ' / ' : ''}${degree}\n`;
+            output += `**原链接**: ${window.location.href.split('?')[0]}\n`;
+            output += `\n`;
+            output += `## 职位描述\n\n${this.getSimpleMarkdown(descHtml)}\n\n`;
+        } else {
+            output = `<h1>${jobTitle}</h1>`;
+            if (salary) output += `<p><strong>薪资</strong>: ${salary}</p>`;
+            if (company) output += `<p><strong>公司</strong>: ${company}</p>`;
+            if (location) output += `<p><strong>地点</strong>: ${location}</p>`;
+            if (experience || degree) output += `<p><strong>要求</strong>: ${experience}${experience && degree ? ' / ' : ''}${degree}</p>`;
+            output += `<p><strong>原链接</strong>: <a href="${window.location.href}">${window.location.href.split('?')[0]}</a></p>`;
+            output += `<h2>职位描述</h2><div>${descHtml}</div>`;
+        }
+
+        return {
+            content: output,
+            images: []
+        };
+    }
+
+    getSimpleMarkdown(html) {
+        if (!html) return "";
+        let md = html;
+        // Basic cleaning
+        md = md.replace(/<br\s*\/?>/gi, '\n');
+        md = md.replace(/<\/p>/gi, '\n\n');
+        md = md.replace(/<li[^>]*>/gi, '- ');
+        md = md.replace(/<\/li>/gi, '\n');
+
+        // Remove all other tags
+        md = md.replace(/<[^>]+>/g, '');
+
+        // Decode entities
+        const doc = new DOMParser().parseFromString(md, 'text/html');
+        md = doc.documentElement.textContent;
+
+        // Clean up multiple newlines
+        md = md.replace(/\n{3,}/g, '\n\n');
+
+        return md.trim();
+    }
+}
+

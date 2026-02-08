@@ -1,6 +1,6 @@
 # 🚀 OnlineDocExporter (在线文档助手)
 
-[![Version](https://img.shields.io/badge/version-v1.2.2-blue.svg)](https://github.com/joshleeeeee/online-doc-exporter)
+[![Version](https://img.shields.io/badge/version-v1.3.0-blue.svg)](https://github.com/joshleeeeee/online-doc-exporter)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Lark-lightgrey.svg)](https://github.com/joshleeeeee/online-doc-exporter)
 
@@ -24,14 +24,11 @@
 ## ✨ 核心特性
 
 - **🚀 极速导出**: 一键将当前文档转换为 Markdown 或富文本。
-- **📦 批量抓取**: 自动扫描页面中的文档链接，支持批量排队抓取，告别繁琐的手动操作。
-- **⚡ 下载中心**: 内置下载管理，支持将抓取的文档打包为 ZIP 压缩包分发，支持历史记录持久化。
-- **🖼️ 智能图片处理**:
-  - **保留原链**: 默认保留云文档原始图片链接。
-  - **Base64 内嵌**: 将图片转码为内联 Base64，实现单文件离线阅读。
-  - **[NEW] 本地打包**: 下载时自动将文档中的图片下载并打包到 ZIP 中，彻底离线化。
-  - **图床上传**: 支持自动将图片上传到 **阿里云 OSS**、**MinIO** 或 **AWS S3**，并将文档中的图片链接替换为永久链接。
-- **🎨 现代精美 UI**: 采用现代设计语言，支持微交互，界面清爽且功能直观。
+- **🤖 多平台适配**: 完美支持 **飞书/Lark** 文档及 **BOSS 直聘** 职位信息提取。
+- **📦 批量抓取**: 自动扫描页面中的文档链接或职位卡片，支持一键排队抓取。
+- **🔗 智能合并**: 针对 BOSS 直聘等场景，支持将多篇内容自动合并为一份文档导出。
+- **🔍 实时检测**: 插件 Popup 自动检测网页支持状态，智能切换抓取模式。
+- **⚡ 下载中心**: 内置下载管理，支持打包为 ZIP，支持历史记录持久化。
 
 ## 📸 界面预览
 
@@ -70,10 +67,11 @@
 ## 🗺️ 未来规划 (Roadmap)
 
 - [x] **批量抓取与打包下载** (已上线)
-- [x] **图片 Base64 转码** (已上线)
-- [x] **图片本地资源打包** (已上线)
+- [x] **图片本地化处理** (已上线)
 - [x] **自动图床上传** (已上线)
-- [ ] **多平台兼容**: 扩展支持 语雀、钉钉文档、Notion 等。
+- [x] **BOSS 直聘招聘信息提取** (v1.3.0)
+- [x] **智能网站支持检测** (v1.3.0)
+- [ ] **多平台兼容**: 持续扩展支持 语雀、钉钉文档、Notion 等。
 - [ ] **自定义模版**: 允许用户自定义导出的 Markdown 样式与 Frontmatter。
 
 ## 🛠️ 技术内幕

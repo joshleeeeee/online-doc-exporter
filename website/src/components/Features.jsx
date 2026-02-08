@@ -1,16 +1,18 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Download, Layers, ShieldCheck, Image, Code2, Zap } from 'lucide-react';
+import { Download, Layers, ShieldCheck, Image, Code2, Zap, Layout, ListChecks, ArrowRightLeft, Database } from 'lucide-react';
 import { content } from '../data/content';
 
 const iconMap = {
     0: <Zap size={24} className="text-yellow-400" />,
     1: <Layers size={24} className="text-blue-400" />,
     2: <Image size={24} className="text-purple-400" />,
-    3: <Code2 size={24} className="text-green-400" />,
-    4: <ShieldCheck size={24} className="text-red-400" />,
-    5: <Download size={24} className="text-cyan-400" />
+    3: <ListChecks size={24} className="text-green-400" />,
+    4: <ArrowRightLeft size={24} className="text-indigo-400" />,
+    5: <Code2 size={24} className="text-emerald-400" />,
+    6: <ShieldCheck size={24} className="text-red-400" />,
+    7: <Download size={24} className="text-cyan-400" />
 };
 
 const colorMap = {
@@ -18,8 +20,10 @@ const colorMap = {
     1: "bg-blue-500/10 border-blue-500/20",
     2: "bg-purple-500/10 border-purple-500/20",
     3: "bg-green-500/10 border-green-500/20",
-    4: "bg-red-500/10 border-red-500/20",
-    5: "bg-cyan-500/10 border-cyan-500/20"
+    4: "bg-indigo-500/10 border-indigo-500/20",
+    5: "bg-emerald-500/10 border-emerald-500/20",
+    6: "bg-red-500/10 border-red-500/20",
+    7: "bg-cyan-500/10 border-cyan-500/20"
 };
 
 const Features = ({ lang }) => {
@@ -54,10 +58,10 @@ const Features = ({ lang }) => {
                             viewport={{ once: true }}
                             transition={{ delay: index * 0.1 }}
                             whileHover={{ y: -5 }}
-                            className={`p-6 rounded-2xl border bg-slate-800/20 backdrop-blur-sm transition-all duration-300 hover:shadow-xl group cursor-pointer ${colorMap[index]}`}
+                            className={`p-6 rounded-2xl border bg-slate-800/20 backdrop-blur-sm transition-all duration-300 hover:shadow-xl group cursor-pointer ${colorMap[index % 8]}`}
                         >
                             <div className="mb-4 p-3 rounded-lg bg-slate-900 w-fit group-hover:scale-110 transition-transform">
-                                {iconMap[index]}
+                                {iconMap[index % 8]}
                             </div>
                             <h3 className="text-xl font-bold text-white mb-2">{feature.title}</h3>
                             <p className="text-slate-400 leading-relaxed text-sm">

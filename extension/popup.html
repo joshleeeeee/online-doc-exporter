@@ -29,6 +29,11 @@
         </div>
     </div>
 
+    <div id="support-status" class="support-status">
+        <div class="status-icon"></div>
+        <span class="status-text">正在检测网页支持情况...</span>
+    </div>
+
     <div class="feishu-copy-tabs">
         <div class="tab-btn active" data-target="tab-single">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
@@ -98,7 +103,7 @@
                         d="M21 21L15 15M17 10C17 13.866 13.866 17 10 17C6.13401 17 3 13.866 3 10C3 6.13401 6.13401 3 10 3C13.866 3 17 6.13401 17 10Z"
                         stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
-                <span>扫描链接</span>
+                <span>扫描页面</span>
             </button>
             <button id="btn-batch-start" class="feishu-copy-btn small secondary" disabled>
                 <svg viewBox="0 0 24 24" fill="none" width="14" height="14" style="margin-right:6px">
@@ -147,7 +152,7 @@
         </div>
 
         <div id="batch-list" class="batch-list">
-            <div class="empty-state">请先扫描当前页面以查找文档链接</div>
+            <div class="empty-state">请先扫描当前页面以查找可抓取的任务或文档</div>
         </div>
     </div>
 
@@ -187,7 +192,7 @@
         </div>
 
         <div id="manager-list" class="manager-list">
-            <div class="empty-state">暂无已下载的文件</div>
+            <div class="empty-state">暂无已下载的内容</div>
         </div>
     </div>
 
@@ -223,7 +228,7 @@
                     <div class="settings-desc">选择导出时如何处理文档中的图片。</div>
                 </div>
                 <!-- Dropdown -->
-                <select id="select-image-mode" class="feishu-copy-input" style="width:140px;">
+                <select id="select-image-mode" class="feishu-copy-input" style="width: fit-content;">
                     <option value="original">保持原链接</option>
                     <option value="base64">转为 Base64 (内嵌)</option>
                     <option value="local">下载到本地 (ZIP) (默认)</option>
@@ -278,6 +283,17 @@
                 </div>
                 <label class="feishu-copy-toggle">
                     <input type="checkbox" id="toggle-foreground">
+                    <span class="feishu-copy-toggle-slider"></span>
+                </label>
+            </div>
+
+            <div class="settings-item">
+                <div class="settings-label">
+                    <div class="settings-title">合并批量抓取结果</div>
+                    <div class="settings-desc">开启后，批量下载时将所有选中的内容合并为一个 Markdown 文档（适用于 BOSS 直聘等）。</div>
+                </div>
+                <label class="feishu-copy-toggle">
+                    <input type="checkbox" id="toggle-merge-batch">
                     <span class="feishu-copy-toggle-slider"></span>
                 </label>
             </div>

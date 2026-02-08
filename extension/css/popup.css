@@ -11,6 +11,72 @@ body {
     align-items: center !important;
 }
 
+/* Support Status Bar */
+.support-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.support-status.supported {
+    background-color: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbfcbd;
+}
+
+.support-status.unsupported {
+    background-color: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+
+.support-status.detecting {
+    background-color: #f8fafc;
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+}
+
+.status-icon {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.supported .status-icon {
+    background-color: #22c55e;
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+}
+
+.unsupported .status-icon {
+    background-color: #ef4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+.detecting .status-icon {
+    background-color: #94a3b8;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.4;
+    }
+
+    100% {
+        opacity: 1;
+    }
+}
+
 .settings-icon-btn {
     background: none;
     border: none;
@@ -339,6 +405,10 @@ body {
     border: 1px solid #e1e4e8;
     border-radius: 8px;
     margin-bottom: 12px;
+}
+
+.settings-item select {
+    flex-shrink: 0;
 }
 
 .settings-label {

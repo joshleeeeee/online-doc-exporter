@@ -10,10 +10,10 @@ export const content = {
             repo: "GitHub Repo"
         },
         hero: {
-            badge: "Now with Batch Export Support",
-            titleStart: "Export Feishu Docs",
-            titleEnd: "Like a Pro.",
-            description: "The ultimate browser extension for converting Lark/Feishu documents into clean Markdown or Rich Text. Perfect for Notion, Obsidian, or your personal blog.",
+            badge: "v1.3.0 is out now",
+            titleStart: "Export Everything,",
+            titleEnd: "Own Your Data",
+            description: "The ultimate universal content extractor for your browser. From cloud docs to job listings and beyond, effortlessly convert online content into clean Markdown or Rich Text. Break down platform silos with smart batch scanning and automated workflows.",
             addToChrome: "Add to Chrome",
             exploreFeatures: "Explore Features"
         },
@@ -22,59 +22,67 @@ export const content = {
             subHighlight: "Powerful features designed for developers, writers, and knowledge workers.",
             list: [
                 {
-                    title: "Instant Export",
-                    description: "Convert any Feishu or Lark document to Markdown or Rich Text in milliseconds. Preserves formatting perfectly."
+                    title: "Universal Export",
+                    description: "Instantly convert online content into perfect Markdown or Rich Text. Preserves formatting, tables, and code blocks."
                 },
                 {
-                    title: "Batch Processing",
-                    description: "Scan and export multiple documents at once. Ideal for migrating entire knowledge bases."
+                    title: "Multi-Source Support",
+                    description: "Intelligent adapters tailored for various platforms including Feishu/Lark, Boss Zhipin, and more to come."
                 },
                 {
                     title: "Smart Image Handling",
-                    description: "Choose between Local ZIP bundling (Default), Base64 embedding, or automatic upload to OSS/MinIO/S3."
+                    description: "Choose between Local ZIP bundling, Base64 embedding, or automatic cloud upload to OSS/MinIO/S3."
                 },
                 {
-                    title: "Clean Code",
-                    description: "Generates semantic, clean Markdown that works seamlessly with Obsidian, Notion, or Hugo."
+                    title: "Automated Batching",
+                    description: "Automatically identifies capture targets on any page. Scan once and export everything in parallel."
                 },
                 {
-                    title: "Privacy First",
-                    description: "Runs entirely in your browser. No data is sent to our servers except for your own configured image uploads."
+                    title: "Smart Content Merging",
+                    description: "Intelligently merge multiple results into a single clean document, perfecting your knowledge organization."
                 },
                 {
-                    title: "Universal Download",
-                    description: "Built-in download manager for ZIP archives. Organize your exports effortlessly."
+                    title: "Clean & Semantic",
+                    description: "Generates high-quality Markdown compatible with Obsidian, Notion, Logseq, and static site generators."
+                },
+                {
+                    title: "Privacy Focused",
+                    description: "Runs entirely in your browser. Your data remains yours—no cloud processing required."
+                },
+                {
+                    title: "Task Manager",
+                    description: "Built-in manager to track capture progress, history, and archive all exports into ZIP files."
                 }
             ]
         },
         showcase: {
-            title: "Seamless Workflow",
-            subtitle: "See how easy it is to manage your documentation.",
+            title: "Universal & Powerful Workflow",
+            subtitle: "See how easy it is to capture and export web content.",
             step1: {
-                title: "Batch Scanning",
-                description: "Automatically detect all document links on a page. Select the ones you need and start the export process with a single click. No more manual copy-pasting.",
-                point1: "Auto-scroll support",
-                point2: "Smart filtering"
+                title: "Auto-Detect & Scan",
+                description: "The extension instantly recognizes the platform and activates the correct extraction engine. One click to scan all possible targets.",
+                point1: "Adaptive extraction",
+                point2: "Batch target recognition"
             },
             step2: {
-                title: "Download Center",
-                description: "Manage all your exports in one place. Keep track of history, retry failed downloads, or package everything into a ZIP file for easy backup.",
-                point1: "ZIP archiving",
-                point2: "History persistence"
+                title: "Unified Task Center",
+                description: "Monitor multiple capture tasks in real-time. Choose to export as individual files, a ZIP archive, or a merged document.",
+                point1: "Flexible export modes",
+                point2: "Persistent task queue"
             },
             step3: {
-                title: "Advanced Settings",
-                description: "Configure image handling to suit your needs. Support for local bundling (ZIP) or automatic upload to your own OSS/MinIO storage.",
-                point1: "Custom Image Hosting",
-                point2: "Foreground Batching"
+                title: "Advanced Customization",
+                description: "Fine-tune your output. From image hosting to format specifics, customize how you own your web content.",
+                point1: "Automated Image Hosting",
+                point2: "Developer-friendly output"
             }
         },
         footer: {
-            brandDescription: "Open-source tool to liberate your documentation. Built with precision and care.",
+            brandDescription: "Open-source tool designed to liberate your documentation. Built with precision and care.",
             privacy: "Privacy Policy",
             terms: "Terms of Service",
             sponsor: "Sponsor",
-            rights: "OnlineDocExporter. All rights reserved. Not affiliated with Feishu or Lark.",
+            rights: "OnlineDocExporter. All rights reserved. Independence through open source.",
             disclaimer: {
                 title: "Legal Disclaimer",
                 text: "This extension is for educational and personal research purposes ONLY. By using this tool, you assume all risks and liabilities. The developer is NOT responsible for any account bans, data loss, or legal consequences resulting from the use of this project. Use it at your own risk."
@@ -87,14 +95,14 @@ export const content = {
             features: "功能特性",
             showcase: "演示流程",
             faq: "常见问题",
-            star: "GitHub Star",
+            star: "Star on GitHub",
             repo: "GitHub 仓库"
         },
         hero: {
-            badge: "全新支持批量导出功能",
-            titleStart: "飞书文档导出",
-            titleEnd: "从未如此简单",
-            description: "一款极致的浏览器插件，一键将飞书/Lark 文档转换为 Markdown 或富文本。完美适配 Notion、Obsidian 或个人博客。",
+            badge: "v1.3.0 现已发布",
+            titleStart: "万物皆可导出",
+            titleEnd: "数据回归自我",
+            description: "跨平台的在线内容提取神器。从云端文档到招聘信息，一键将碎片化的网页内容转化为精美的 Markdown 或富文本。内置智能扫描与自动化流，打破平台壁垒，让知识沉淀更简单。",
             addToChrome: "添加到 Chrome",
             exploreFeatures: "探索功能"
         },
@@ -103,59 +111,67 @@ export const content = {
             subHighlight: "专为开发者、写作者和知识管理爱好者打造。",
             list: [
                 {
-                    title: "极速导出",
-                    description: "毫秒级将飞书/Lark 文档转换为 Markdown 或富文本，完美保留原始格式。"
+                    title: "全能转换",
+                    description: "毫秒级将在线内容转换为完美的 Markdown 或富文本，保留表格、代码块及复杂排版。"
                 },
                 {
-                    title: "批量处理",
-                    description: "自动扫描并批量导出多个文档。迁移整个知识库的最佳利器。"
+                    title: "多平台兼容",
+                    description: "预置飞书/Lark、BOSS直聘等深度适配器，持续扩展更多主流内容平台。"
                 },
                 {
                     title: "智能图片处理",
-                    description: "支持本地 ZIP 打包（默认）、Base64 内嵌，或自动上传至 OSS/MinIO/S3 图床。"
+                    description: "支持本地 ZIP 打包、Base64 内嵌，或一键上传至 OSS/MinIO/S3 个人图床。"
                 },
                 {
-                    title: "纯净代码",
-                    description: "生成语义化、干净的 Markdown 代码，无缝对接 Obsidian、Notion 或 Hugo。"
+                    title: "自动化批处理",
+                    description: "智能识别页面中的可提取目标。只需一键扫描，即可批量排队导出所有内容。"
                 },
                 {
-                    title: "隐私优先",
-                    description: "所有处理均在浏览器本地完成。除了你自己配置的图床上传，没有任何数据会发送到服务器。"
+                    title: "智能内容合并",
+                    description: "支持将多个抓取结果自动合并为一个逻辑清晰的文档，让碎片信息更具体系化。"
                 },
                 {
-                    title: "通用下载",
-                    description: "内置下载管理器，支持打包为 ZIP 压缩包。轻松管理你的导出历史。"
+                    title: "语义化输出",
+                    description: "生成高标准的纯净 Markdown，无缝对接 Obsidian、Notion 及静态网站生成器。"
+                },
+                {
+                    title: "隐私安全",
+                    description: "所有处理逻辑均在本地完成，保护您的数据隐私，不经过任何第三方服务器。"
+                },
+                {
+                    title: "现代下载中心",
+                    description: "内置任务管理器，支持持久化历史记录与 ZIP 归档。轻松掌控你的导出任务。"
                 }
             ]
         },
         showcase: {
-            title: "无缝工作流",
-            subtitle: "从扫描到导出，只需几步即可完成。",
+            title: "全通用、更高效的提取流程",
+            subtitle: "不仅是搬运工，更是您的生产力伴侣。",
             step1: {
-                title: "批量扫描",
-                description: "自动检测页面上的所有文档链接。选择你需要的文档，一键启动导出。告别繁琐的手动复制粘贴。",
-                point1: "支持自动滚动加载",
-                point2: "智能过滤无效链接"
+                title: "感知检测与扫描",
+                description: "插件自动识别网页平台并激活对应引擎。一键扫描页面中所有的目标链接或信息卡片。",
+                point1: "平台自适应引擎",
+                point2: "批量目标极速提取"
             },
             step2: {
-                title: "下载中心",
-                description: "在一个地方管理所有导出任务。查看历史记录、重试失败任务，或将所有文件打包为 ZIP 下载。",
-                point1: "ZIP 打包归档",
-                point2: "历史记录持久化"
+                title: "任务管理大厅",
+                description: "统一监控多个抓取任务的实时进度。支持导出为独立文件、ZIP 压缩包或智能合并文档。",
+                point1: "灵活多样的导出模式",
+                point2: "持久化任务队列"
             },
             step3: {
-                title: "高级设置",
-                description: "自由配置图片处理模式，满足不同场景需求。支持完全离线化的本地打包，或自动上传至你自己的 OSS/MinIO 图床。",
-                point1: "自定义图床支持",
-                point2: "前台批处理模式"
+                title: "个性化高级配置",
+                description: "深度定制你的输出需求。从图片托管策略到格式微调，一切尽在掌控。",
+                point1: "自动化图床配置",
+                point2: "开发者模式支持"
             }
         },
         footer: {
-            brandDescription: "开源工具，旨在解放你的文档数据。用心打造。",
+            brandDescription: "开源工具，旨在解放你的在线数据。用心打造。",
             privacy: "隐私政策",
             terms: "服务条款",
             sponsor: "赞助作者",
-            rights: "OnlineDocExporter. 保留所有权利. 本项目与飞书或 Lark 无任何关联.",
+            rights: "OnlineDocExporter. 保留所有权利. 保持独立，拥抱开源.",
             disclaimer: {
                 title: "免责声明",
                 text: "本插件仅供技术研究、学术探讨以及个人备份自用。请勿将本插件用于任何商业用途、大规模非法抓取、侵犯版权或其他违反法律法规的行为。用户在使用本插件时，必须遵守所在地区法律法规及对应文档平台的服务条款。由此产生的任何个人账号封禁、合规性风险或法律责任，均由使用者自行承担，开发者概不负责。"
