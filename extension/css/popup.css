@@ -32,6 +32,42 @@
     background: #eff6ff;
 }
 
+/* Coffee Button */
+.coffee-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    background: #fff8f1;
+    border: 1px solid #ffd8a8;
+    border-radius: 6px;
+    color: #f76707;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.coffee-btn:hover {
+    background: #fff4e6;
+    border-color: #ffa94d;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(247, 103, 7, 0.1);
+}
+
+.coffee-btn:active {
+    transform: translateY(0);
+}
+
+.coffee-btn span:first-child {
+    font-size: 16px;
+    line-height: 1;
+}
+
+.coffee-text {
+    color: #f76707;
+}
+
 /* CSS for Batch Tab UI */
 
 /* Tabs */
@@ -131,7 +167,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 220px;
+    flex: 1;
 }
 
 .progress-bar {

@@ -623,24 +623,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let statusIcon = '';
             let statusColor = '#1f2329';
-            let actions = '';
             let checkboxHtml = '';
+            let itemId = null;
 
             // Calculate size if success
             let size = 0;
             let sizeText = '';
 
             if (status === 'success') {
+                itemId = `manager-cb-${Math.random().toString(36).substr(2, 9)}`;
                 size = calculateSize({ content, images });
                 sizeText = `<span style="font-size:11px; color:#8f959e; margin-left:8px;">(${formatSize(size)})</span>`;
-                checkboxHtml = `<input type="checkbox" class="manager-checkbox" data-url="${url}" data-size="${size}" style="margin-right:8px;">`;
+                checkboxHtml = `<input type="checkbox" id="${itemId}" class="manager-checkbox" data-url="${url}" data-size="${size}" style="margin-right:8px;">`;
             } else {
                 checkboxHtml = `<span style="width:13px; margin-right:8px; display:inline-block;"></span>`; // Spacer
             }
 
             if (status === 'success') {
                 statusIcon = `<svg viewBox="0 0 24 24" fill="none" width="16" height="16" style="margin-right:8px"><path d="M22 11.08V12C21.9988 14.1564 21.3005 16.2547 20.0093 17.9888C18.7182 19.7228 16.9033 20.9972 14.8354 21.6226C12.7674 22.2479 10.5501 22.2031 8.51131 21.4939C6.47257 20.7848 4.7182 19.4471 3.51187 17.6835C2.30555 15.9199 1.71181 13.8214 1.81596 11.7019C1.92011 9.58232 2.71677 7.55024 4.08502 5.9103C5.45328 4.27035 7.31961 3.11196 9.40017 2.61099C11.4807 2.11003 13.6654 2.2929 15.63 3.13" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 4L12 14.01L9 11.01" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-                actions = `<button class="btn-item-download" data-url="${url}" title="单独下载"><svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 10L12 15L17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
             } else if (status === 'failed') {
                 statusIcon = `<svg viewBox="0 0 24 24" fill="none" width="16" height="16" style="margin-right:8px"><circle cx="12" cy="12" r="10" stroke="#ef4444" stroke-width="2"/><line x1="15" y1="9" x2="9" y2="15" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/><line x1="9" y1="9" x2="15" y2="15" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/></svg>`;
                 statusColor = '#ef4444';
@@ -648,21 +648,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 statusIcon = `<div class="loading-spin-small" style="margin-right:8px"></div>`;
                 statusColor = '#3370ff';
             } else {
-                // pending
                 statusIcon = `<svg viewBox="0 0 24 24" fill="none" width="16" height="16" style="margin-right:8px; opacity:0.5"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/><path d="M12 6V12L16 14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
                 statusColor = '#8f959e';
             }
 
+            actions = `<button class="btn-item-open" data-url="${url}" title="打开原链接"><svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="15 3 21 3 21 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="10" y1="14" x2="21" y2="3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
+
+            if (status === 'success') {
+                actions += `<button class="btn-item-download" data-url="${url}" title="单独下载"><svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M21 15V19C21 19.5304 20.7893 20.0391 20.4142 20.4142C20.0391 20.7893 19.5304 21 19 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 10L12 15L17 10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
+            }
             actions += `<button class="btn-item-delete" data-url="${url}" title="删除"><svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M3 6H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 6V20C19 20.5304 18.7893 21.0391 18.4142 21.4142C18.0391 21.7893 17.5304 22 17 22H7C6.46957 22 5.96086 21.7893 5.58579 21.4142C5.21071 21.0391 5 20.5304 5 20V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
 
             div.innerHTML = `
                 <div style="display:flex; align-items:center; flex:1; min-width:0;">
                     ${checkboxHtml}
-                    ${statusIcon}
-                    <div style="display:flex; flex-direction:column; overflow:hidden; flex:1;">
-                         <span class="batch-item-text" style="color:${statusColor}">${title}${status === 'processing' ? ' (抓取中...)' : (status === 'pending' ? ' (等待中)' : '')}</span>
-                    </div>
-                    ${sizeText}
+                    <label for="${itemId || ''}" style="display:flex; align-items:center; flex:1; min-width:0; cursor:pointer;" class="manager-item-label">
+                        ${statusIcon}
+                        <div style="display:flex; flex-direction:column; overflow:hidden; flex:1; min-width:0;">
+                            <span class="batch-item-text" style="color:${statusColor}" title="${title}">${title}${status === 'processing' ? ' (抓取中...)' : (status === 'pending' ? ' (等待中)' : '')}</span>
+                        </div>
+                        ${sizeText}
+                    </label>
                 </div>
                 <div class="manager-actions">
                     ${actions}
@@ -715,6 +721,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const url = btn.getAttribute('data-url');
                 const doc = results.find(r => r.url === url);
                 if (doc) downloadFile(doc.title, doc.content);
+            };
+        });
+
+        managerList.querySelectorAll('.btn-item-open').forEach(btn => {
+            btn.onclick = () => {
+                const url = btn.getAttribute('data-url');
+                chrome.tabs.create({ url: url });
             };
         });
 
