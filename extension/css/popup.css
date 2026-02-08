@@ -43,7 +43,10 @@
 
 .tab-btn {
     flex: 1;
-    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     padding: 10px 0;
     font-size: 14px;
     font-weight: 500;
