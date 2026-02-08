@@ -9,7 +9,24 @@ let isReady = false;
 const preparePromise = new Promise(resolve => {
     chrome.storage.local.get(['batchQueue', 'processedResults', 'isProcessing', 'isPaused'], (data) => {
         if (data.batchQueue) BATCH_QUEUE = data.batchQueue;
-        if (data.processedResults) processedResults = data.processedResults;
+        if (data.processedResults) {
+            processedResults = data.processedResults;
+            // Migration: calculate size for existing items
+            let needsSave = false;
+            processedResults.forEach(item => {
+                if (item.status === 'success' && (item.size === undefined || item.size === 0)) {
+                    let s = (item.content ? item.content.length : 0);
+                    if (item.images) {
+                        item.images.forEach(img => {
+                            if (img.base64) s += (img.base64.length * 0.75);
+                        });
+                    }
+                    item.size = Math.round(s);
+                    needsSave = true;
+                }
+            });
+            if (needsSave) saveState();
+        }
         if (data.isPaused) isPaused = true;
 
         if (data.isProcessing && BATCH_QUEUE.length > 0 && !isPaused) {
@@ -63,13 +80,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             await saveState();
             sendResponse({ success: true, message: 'Started' });
         } else if (request.action === 'GET_BATCH_STATUS') {
+            const lightResults = processedResults.map(r => ({
+                url: r.url,
+                title: r.title,
+                size: r.size || 0,
+                status: r.status,
+                timestamp: r.timestamp,
+                error: r.error
+            }));
             sendResponse({
                 isProcessing,
                 isPaused,
                 queue: BATCH_QUEUE,
-                results: processedResults,
+                results: lightResults,
                 currentItem: currentItem
             });
+        } else if (request.action === 'GET_FULL_RESULTS') {
+            const { urls } = request;
+            const fullItems = processedResults.filter(r => urls.includes(r.url));
+            sendResponse({ results: fullItems });
         } else if (request.action === 'PAUSE_BATCH') {
             isPaused = true;
             await saveState();
@@ -194,11 +223,15 @@ async function processNextItem() {
                 }
             }
 
+            const calculatedSize = Math.round((response.content ? response.content.length : 0) +
+                (response.images ? response.images.reduce((sum, img) => sum + (img.base64 ? img.base64.length * 0.75 : 0), 0) : 0));
+
             processedResults.push({
                 url: taskUrl,
                 title: title.trim(),
                 content: response.content,
                 images: response.images || [],
+                size: calculatedSize,
                 status: 'success',
                 timestamp: Date.now()
             });

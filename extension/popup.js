@@ -325,10 +325,28 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await chrome.tabs.sendMessage(tab.id, { action: 'SCAN_LINKS' });
 
             if (response && response.success) {
-                scannedLinks = response.links || [];
-                renderBatchList(downloadedUrls);
+                const newLinks = response.links || [];
+                let addedCount = 0;
+
+                newLinks.forEach(link => {
+                    if (!scannedLinks.find(sl => sl.url === link.url)) {
+                        scannedLinks.push(link);
+                        addedCount++;
+                    }
+                });
+
+                if (newLinks.length > 0) {
+                    renderBatchList(downloadedUrls);
+                    if (addedCount > 0) {
+                        showToast(`新增 ${addedCount} 条链接`);
+                    } else {
+                        showToast('未发现新链接');
+                    }
+                }
             } else {
-                listContainer.innerHTML = '<div class="empty-state">未发现文档链接。</div>';
+                if (scannedLinks.length === 0) {
+                    listContainer.innerHTML = '<div class="empty-state">未发现文档链接。</div>';
+                }
             }
         } catch (e) {
             console.error(e);
@@ -616,7 +634,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Helper to create list items
-        const createItemEl = (title, status, url, content = null, images = []) => {
+        const createItemEl = (title, status, url, itemSize = 0) => {
             const div = document.createElement('div');
             div.className = 'batch-item';
             div.style.justifyContent = 'space-between';
@@ -632,7 +650,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (status === 'success') {
                 itemId = `manager-cb-${Math.random().toString(36).substr(2, 9)}`;
-                size = calculateSize({ content, images });
+                size = itemSize || 0;
                 sizeText = `<span style="font-size:11px; color:#8f959e; margin-left:8px;">(${formatSize(size)})</span>`;
                 checkboxHtml = `<input type="checkbox" id="${itemId}" class="manager-checkbox" data-url="${url}" data-size="${size}" style="margin-right:8px;">`;
             } else {
@@ -691,7 +709,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 3. Show Results (sorted)
         const sorted = [...results].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         sorted.forEach(item => {
-            managerList.appendChild(createItemEl(item.title, item.status, item.url, item.content, item.images));
+            managerList.appendChild(createItemEl(item.title, item.status, item.url, item.size));
         });
 
         // Delegate clicks
@@ -719,8 +737,12 @@ document.addEventListener('DOMContentLoaded', () => {
         managerList.querySelectorAll('.btn-item-download').forEach(btn => {
             btn.onclick = () => {
                 const url = btn.getAttribute('data-url');
-                const doc = results.find(r => r.url === url);
-                if (doc) downloadFile(doc.title, doc.content);
+                chrome.runtime.sendMessage({ action: 'GET_FULL_RESULTS', urls: [url] }, (res) => {
+                    if (res && res.results && res.results.length > 0) {
+                        const doc = res.results[0];
+                        downloadFile(doc.title, doc.content);
+                    }
+                });
             };
         });
 
@@ -757,16 +779,16 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const selectedUrls = new Set(Array.from(checkboxes).map(cb => cb.getAttribute('data-url')));
+        const selectedUrls = Array.from(checkboxes).map(cb => cb.getAttribute('data-url'));
 
-        chrome.runtime.sendMessage({ action: 'GET_BATCH_STATUS' }, async (res) => {
+        chrome.runtime.sendMessage({ action: 'GET_FULL_RESULTS', urls: selectedUrls }, async (res) => {
             if (!res || !res.results) return;
             const zip = new JSZip();
             let count = 0;
 
             // Only process selected items
             res.results.forEach(item => {
-                if (item.status === 'success' && selectedUrls.has(item.url)) {
+                if (item.status === 'success' && selectedUrls.includes(item.url)) {
                     // Safe filename
                     let safeTitle = item.title.replace(/[\\/:*?"<>|]/g, "_");
                     // avoid duplicates in same zip

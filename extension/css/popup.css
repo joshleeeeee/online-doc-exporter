@@ -150,6 +150,25 @@ body {
     padding: 0 4px;
 }
 
+.batch-scan-tip {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 8px 12px;
+    background: #f0f4ff;
+    border-radius: 6px;
+    color: #3370ff;
+    font-size: 11px;
+    line-height: 1.5;
+    margin-bottom: 10px;
+    border: 1px solid #ddecff;
+}
+
+.batch-scan-tip svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
 .batch-list {
     border: 1px solid #e1e4e8;
     border-radius: 6px;
