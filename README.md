@@ -1,6 +1,6 @@
 # 🚀 OnlineDocExporter (在线文档助手)
 
-[![Version](https://img.shields.io/badge/version-v1.0-blue.svg)](https://github.com/joshleeeeee/online-doc-exporter)
+[![Version](https://img.shields.io/badge/version-v1.1-blue.svg)](https://github.com/joshleeeeee/online-doc-exporter)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Lark-lightgrey.svg)](https://github.com/joshleeeeee/online-doc-exporter)
 
@@ -27,16 +27,19 @@
 - **📦 批量抓取**: 自动扫描页面中的文档链接，支持批量排队抓取，告别繁琐的手动操作。
 - **⚡ 下载中心**: 内置下载管理，支持将抓取的文档打包为 ZIP 压缩包分发，支持历史记录持久化。
 - **🖼️ 智能图片处理**:
-  - **Base64 转换**: 可选将远程图片转码为内联 Base64，实现真正的离线阅读与文档迁移。
-  - **[NEW] 图床上传**: 支持自动将图片上传到 **阿里云 OSS**、**MinIO** 或 **AWS S3**，并将文档中的图片链接替换为永久链接。
+  - **保留原链**: 默认保留云文档原始图片链接。
+  - **Base64 内嵌**: 将图片转码为内联 Base64，实现单文件离线阅读。
+  - **[NEW] 本地打包**: 下载时自动将文档中的图片下载并打包到 ZIP 中，彻底离线化。
+  - **图床上传**: 支持自动将图片上传到 **阿里云 OSS**、**MinIO** 或 **AWS S3**，并将文档中的图片链接替换为永久链接。
 - **🎨 现代精美 UI**: 采用现代设计语言，支持微交互，界面清爽且功能直观。
 
 ## 📸 界面预览
 
 <p align="center">
-  <img src="extension/images/preview1.png" width="250" alt="单页复制" />
-  <img src="extension/images/preview2.png" width="250" alt="批量抓取" />
-  <img src="extension/images/preview3.png" width="250" alt="下载中心" />
+  <img src="website/public/images/preview-single.png" width="200" alt="单页复制" />
+  <img src="website/public/images/preview-batch.png" width="200" alt="批量抓取" />
+  <img src="website/public/images/preview-download.png" width="200" alt="下载中心" />
+  <img src="website/public/images/preview-settings.png" width="200" alt="设置图床" />
 </p>
 
 ## 🚀 快速上手
@@ -52,14 +55,14 @@
 ### 使用指南
 1. **单页复制**:
    - 打开飞书/Lark 文档页面。
-   - 点击插件图标，在“单页复制”面板选择 Markdown 或 富文本。
+   - 点击插件图标，在设置区选择 **图片处理模式**（保留原链、Base64、本地打包或图床上传）。
+   - 在“单页复制”面板选择 Markdown 或 富文本。
 2. **批量抓取**:
    - 在包含多个文档链接的页面（如知识库首页、列表页）点击“批量抓取”。
    - 点击“扫描链接”，勾选目标文档后点击“开始抓取”。
-3. **设置图床 (可选)**:
-   - 点击右上角设置图标，开启“图片上传图床”。
-   - 填写 OSS/MinIO/S3 的 AccessKey、SecretKey、Bucket 等信息。
-   - 抓取时插件会自动上传图片并替换链接。
+3. **高级设置 (图床/本地)**:
+   - 点击右上角设置图标，可以配置 OSS/MinIO/S3 的详细参数。
+   - 如果选择“下载到本地 (ZIP)”，抓取完成后在下载中心打包下载时，图片会自动包含在压缩包中。
 4. **下载管理**:
    - 进入“下载中心”，查看抓取进度。
    - 抓取完成后可单独下载或点击“打包下载”获取所有文件。
@@ -68,6 +71,7 @@
 
 - [x] **批量抓取与打包下载** (已上线)
 - [x] **图片 Base64 转码** (已上线)
+- [x] **图片本地资源打包** (已上线)
 - [x] **自动图床上传** (已上线)
 - [ ] **多平台兼容**: 扩展支持 语雀、钉钉文档、Notion 等。
 - [ ] **自定义模版**: 允许用户自定义导出的 Markdown 样式与 Frontmatter。

@@ -61,6 +61,12 @@ export const content = {
                 description: "Manage all your exports in one place. Keep track of history, retry failed downloads, or package everything into a ZIP file for easy backup.",
                 point1: "ZIP archiving",
                 point2: "History persistence"
+            },
+            step3: {
+                title: "Advanced Settings",
+                description: "Configure image handling to suit your needs. Support for local bundling (ZIP) or automatic upload to your own OSS/MinIO storage.",
+                point1: "Custom Image Hosting",
+                point2: "Foreground Batching"
             }
         },
         footer: {
@@ -135,6 +141,12 @@ export const content = {
                 description: "在一个地方管理所有导出任务。查看历史记录、重试失败任务，或将所有文件打包为 ZIP 下载。",
                 point1: "ZIP 打包归档",
                 point2: "历史记录持久化"
+            },
+            step3: {
+                title: "高级设置",
+                description: "自由配置图片处理模式，满足不同场景需求。支持完全离线化的本地打包，或自动上传至你自己的 OSS/MinIO 图床。",
+                point1: "自定义图床支持",
+                point2: "前台批处理模式"
             }
         },
         footer: {
