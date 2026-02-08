@@ -111,10 +111,6 @@ class FeishuAdapter extends BaseAdapter {
 
         // Selectors for Feishu sidebar / tree navigation / file lists
         const selectors = [
-            '.navigation-tree a',
-            '.tree-node-content a',
-            '.catalog-tree a',
-            '.explorer-tree a',
             'a.mention-doc', // Mentions
             'a.file-item-link', // File List Items (Explorer)
             'div[role="treeitem"] a', // Generic tree items
@@ -123,19 +119,52 @@ class FeishuAdapter extends BaseAdapter {
             'a[href*="/wiki/"]',
             'a[href*="/sheets/"]',
             'a[href*="/base/"]',
-            'a[href*="/file/"]'
+            'a[href*="/file/"]',
+            '.table-view .workspace-dnd-source', // Specific to table view rows
+            '.table-view [data-obj-token]'      // Specific to table view token items
         ];
 
         const nodes = document.querySelectorAll(selectors.join(', '));
         console.log(`FeishuAdapter: Found ${nodes.length} potential nodes.`);
 
-        nodes.forEach(a => {
-            let url = a.href;
-            // Some nodes might be wrappers, check closest 'a' if node is not 'a' (query selector might return a if specified)
-            // But querySelectorAll won't unless selector targets it.
-            // Check if 'a' is valid
+        nodes.forEach(node => {
+            let url = node.href;
+
+            // 0. Handle elements without href but with tokens (e.g. file list items)
+            if (!url) {
+                const objTokenAttr = node.getAttribute('data-obj-token');
+                const nodeTokenAttr = node.getAttribute('data-node-token');
+                if (objTokenAttr || nodeTokenAttr) {
+                    const type = node.getAttribute('data-type');
+
+                    // Feishu OBJ Type Mapping
+                    const typeMap = {
+                        '2': 'docs',
+                        '3': 'sheets',
+                        '8': 'wiki',
+                        '15': 'base',
+                        '22': 'docx',
+                        '11': 'mindnotes'
+                    };
+
+                    const typePath = typeMap[type] || (nodeTokenAttr ? 'wiki' : 'docx');
+                    let token = (typePath === 'wiki') ? (nodeTokenAttr || objTokenAttr) : (objTokenAttr || nodeTokenAttr);
+
+                    if (token) {
+                        // Strip prefix like "MySpace:"
+                        token = token.includes(':') ? token.split(':').pop() : token;
+                        url = `${window.location.origin}/${typePath}/${token}`;
+                    }
+                }
+            }
+
+            // Fallback: Check if any child has href
+            if (!url) {
+                const firstLink = node.querySelector('a[href]');
+                if (firstLink) url = firstLink.href;
+            }
+
             if (!url || typeof url !== 'string') {
-                console.log(`Skipping node (invalid URL): ${a.outerHTML}`);
                 return;
             }
 
@@ -165,17 +194,17 @@ class FeishuAdapter extends BaseAdapter {
             let title = '';
 
             // 1. Try specific title classes found in Feishu UI
-            const titleNode = a.querySelector('.workspace-dnd-node-content, .tree-node-title, .catalog-tree-node-text, .explorer-node-title');
+            const titleNode = node.querySelector('.workspace-dnd-node-content, .tree-node-title, .catalog-tree-node-text, .explorer-node-title');
             if (titleNode) {
                 title = titleNode.getAttribute('title') || titleNode.textContent;
             }
 
             // 2. Try generic link title
-            if (!title) title = a.title;
+            if (!title) title = node.title;
 
             // 3. Try mention text
-            if (!title && a.classList.contains('mention-doc')) {
-                title = a.textContent; // Mentions usually are just text
+            if (!title && node.classList.contains('mention-doc')) {
+                title = node.textContent; // Mentions usually are just text
             }
 
             // 4. Fallback to clean innerText (heavy)
@@ -185,7 +214,7 @@ class FeishuAdapter extends BaseAdapter {
                 // We want the primary text.
                 // Heuristic: Take the text of the first major div or span?
                 // Or just all text.
-                title = a.textContent.trim();
+                title = node.textContent.trim();
             }
 
             title = title.trim();

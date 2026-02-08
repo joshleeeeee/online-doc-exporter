@@ -1,6 +1,6 @@
 # 🚀 OnlineDocExporter (在线文档助手)
 
-[![Version](https://img.shields.io/badge/version-v1.1-blue.svg)](https://github.com/joshleeeeee/online-doc-exporter)
+[![Version](https://img.shields.io/badge/version-v1.2.2-blue.svg)](https://github.com/joshleeeeee/online-doc-exporter)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Lark-lightgrey.svg)](https://github.com/joshleeeeee/online-doc-exporter)
 

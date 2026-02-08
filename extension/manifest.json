@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OnlineDocExporter",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Powerful tool to copy/export online documents (Feishu/Lark etc.) as Markdown or Rich Text.",
   "permissions": [
     "activeTab",

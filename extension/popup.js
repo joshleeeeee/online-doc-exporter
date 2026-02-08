@@ -10,6 +10,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const panes = document.querySelectorAll('.tab-pane');
     const settingsBtn = document.getElementById('btn-settings-icon');
 
+    // --- Tip Dismissal Logic ---
+    const tipsToCheck = ['tip-sidebar', 'tip-scroll'];
+    tipsToCheck.forEach(id => {
+        const el = document.getElementById(id);
+        if (el && localStorage.getItem(`dismissed-${id}`) === 'true') {
+            el.style.display = 'none';
+        }
+    });
+
+    document.querySelectorAll('.tip-close').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const targetId = btn.getAttribute('data-target');
+            const targetEl = document.getElementById(targetId);
+            if (targetEl) {
+                targetEl.style.display = 'none';
+                localStorage.setItem(`dismissed-${targetId}`, 'true');
+            }
+        });
+    });
+
     const switchTab = (targetId) => {
         tabs.forEach(t => t.classList.remove('active'));
         panes.forEach(p => p.classList.remove('active'));
