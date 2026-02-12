@@ -5,7 +5,6 @@ import BatchTab from '../components/BatchTab.vue'
 import ManagerTab from '../components/ManagerTab.vue'
 import { useSettingsStore } from '../store/settings'
 import { useBatchStore } from '../store/batch'
-import JSZip from 'jszip'
 
 const version = ref('1.4.0')
 const activeTab = ref('main')
@@ -31,6 +30,21 @@ const triggerToast = (msg: string) => {
   setTimeout(() => {
     showToast.value = false
   }, 2000)
+}
+
+const sendExtractMessage = async (tabId: number, payload: any, timeoutMs: number) => {
+  return await new Promise<any>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(`抓取超时（${Math.round(timeoutMs / 1000)}秒）`)), timeoutMs)
+    chrome.tabs.sendMessage(tabId, payload)
+      .then((res) => {
+        window.clearTimeout(timer)
+        resolve(res)
+      })
+      .catch((err) => {
+        window.clearTimeout(timer)
+        reject(err)
+      })
+  })
 }
 
 const checkSupport = async () => {
@@ -98,48 +112,42 @@ const executeCopy = async (format: 'markdown' | 'html') => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
     if (!tab?.id) throw new Error('找不到活动标签页')
 
-    const response = await chrome.tabs.sendMessage(tab.id, {
+    if (imageMode === 'local') {
+      const response = await sendExtractMessage(tab.id, {
+        action: 'EXTRACT_AND_DOWNLOAD_LOCAL',
+        format: format,
+        options: { imageMode, scrollWaitTime, imageConfig }
+      }, 15 * 60 * 1000)
+
+      if (response && response.success) {
+        if (response.hasImages) {
+          triggerToast(`已下载 ZIP（图片 ${response.imageCount || 0} 张）`)
+        } else {
+          triggerToast(`已下载 ${format === 'markdown' ? 'Markdown' : 'HTML'} 文件`)
+        }
+        return
+      }
+      throw new Error(response?.error || '本地下载失败')
+    }
+
+    const timeoutMs = 6 * 60 * 1000
+    const response = await sendExtractMessage(tab.id, {
       action: 'EXTRACT_CONTENT',
       format: format,
       options: { imageMode, scrollWaitTime, imageConfig }
-    })
+    }, timeoutMs)
 
     if (response && response.success) {
       const hasImages = response.images && response.images.length > 0
       
-      if (imageMode === 'local' && hasImages) {
-        const zip = new JSZip()
-        const safeTitle = (response.title || 'document').replace(/[\\/:*?"<>|]/g, "_")
-        const ext = format === 'markdown' ? '.md' : '.html'
-        const filename = safeTitle + ext
-
-        const imgFolder = zip.folder("images")
-        response.images.forEach((img: any) => {
-          if (img.base64 && img.base64.includes(',')) {
-            const base64Data = img.base64.split(',')[1]
-            imgFolder?.file(img.filename, base64Data, { base64: true })
-          }
-        })
-
-        zip.file(filename, response.content)
-        const blob = await zip.generateAsync({ type: "blob" })
-        const dlUrl = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = dlUrl
-        a.download = `${safeTitle}.zip`
-        a.click()
-        URL.revokeObjectURL(dlUrl)
-        triggerToast('已打包下载 ZIP (含图片)')
+      if (format === 'markdown') {
+        await copyToClipboard(response.content)
+        triggerToast('Markdown 已复制到剪贴板')
       } else {
-        if (format === 'markdown') {
-          await copyToClipboard(response.content)
-          triggerToast('Markdown 已复制到剪贴板')
-        } else {
-          // HTML copy
-          const textFallback = response.content.replace(/<[^>]+>/g, '')
-          await copyToClipboard(textFallback, response.content)
-          triggerToast('富文本已复制到剪贴板')
-        }
+        // HTML copy
+        const textFallback = response.content.replace(/<[^>]+>/g, '')
+        await copyToClipboard(textFallback, response.content)
+        triggerToast('富文本已复制到剪贴板')
       }
     } else {
       throw new Error(response?.error || '解析失败')
@@ -174,11 +182,11 @@ const executePDF = async () => {
     if (!tab?.id) throw new Error('找不到活动标签页')
 
     // Always extract as HTML with base64 images for PDF
-    const response = await chrome.tabs.sendMessage(tab.id, {
+    const response = await sendExtractMessage(tab.id, {
       action: 'EXTRACT_CONTENT',
       format: 'html',
       options: { imageMode: 'base64', scrollWaitTime, imageConfig }
-    })
+    }, 8 * 60 * 1000)
 
     if (response && response.success) {
       // Store content for the print rendering page
@@ -304,8 +312,24 @@ onUnmounted(() => {
        <div class="flex justify-between items-center">
           <span class="text-xs font-bold tracking-widest uppercase">{{ batchStore.isPaused ? '任务已暂停' : '正在抓取队列...' }}</span>
           <div class="flex gap-2">
-             <button v-if="!batchStore.isPaused" @click="batchStore.pauseBatch" class="text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded uppercase font-bold">暂停</button>
-             <button v-else @click="batchStore.resumeBatch" class="text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded uppercase font-bold">继续</button>
+             <button
+               v-if="!batchStore.isPaused"
+               @click="batchStore.pauseBatch"
+               :disabled="batchStore.isPausing"
+               class="text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded uppercase font-bold disabled:opacity-60 flex items-center gap-1"
+             >
+               <span v-if="batchStore.isPausing" class="w-2.5 h-2.5 border border-white/50 border-t-white rounded-full animate-spin"></span>
+               <span>{{ batchStore.isPausing ? '暂停中' : '暂停' }}</span>
+             </button>
+             <button
+               v-else
+               @click="batchStore.resumeBatch"
+               :disabled="batchStore.isResuming"
+               class="text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded uppercase font-bold disabled:opacity-60 flex items-center gap-1"
+             >
+               <span v-if="batchStore.isResuming" class="w-2.5 h-2.5 border border-white/50 border-t-white rounded-full animate-spin"></span>
+               <span>{{ batchStore.isResuming ? '继续中' : '继续' }}</span>
+             </button>
           </div>
        </div>
        <div class="w-full h-1.5 bg-blue-400 rounded-full overflow-hidden">

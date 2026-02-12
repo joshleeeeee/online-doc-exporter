@@ -9,6 +9,9 @@ export interface BatchItem {
     error?: string
     content?: string
     images?: any[]
+    archiveBase64?: string
+    archiveName?: string
+    archiveStorageKey?: string
 }
 
 let BATCH_QUEUE: BatchItem[] = []
@@ -29,6 +32,8 @@ const STORAGE_THROTTLE_LV2_BYTES = 650 * 1024 * 1024
 let configuredConcurrency = 1
 let throttledConcurrency = 1
 let throttleCooldownUntil = 0
+const EXTRACT_TIMEOUT_DEFAULT_MS = 6 * 60_000
+const EXTRACT_TIMEOUT_LOCAL_IMAGE_MS = 12 * 60_000
 
 function normalizeBatchConcurrency(value: any): number {
     const n = Number(value)
@@ -86,6 +91,21 @@ function isTaskCancelled(url: string) {
     return isPaused || cancelledTaskUrls.has(url)
 }
 
+async function sendExtractMessage(tabId: number, payload: any, timeoutMs: number) {
+    return await new Promise<any>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`Extraction timeout after ${Math.round(timeoutMs / 1000)}s`)), timeoutMs)
+        chrome.tabs.sendMessage(tabId, payload)
+            .then((res) => {
+                clearTimeout(timer)
+                resolve(res)
+            })
+            .catch((err) => {
+                clearTimeout(timer)
+                reject(err)
+            })
+    })
+}
+
 async function cancelActiveTasks() {
     const tabsToClose: number[] = []
     for (const [url, task] of activeTasks.entries()) {
@@ -135,12 +155,31 @@ const preparePromise = new Promise<void>((resolve) => {
 })
 
 async function saveState() {
-    await chrome.storage.local.set({
-        batchQueue: BATCH_QUEUE,
-        processedResults,
-        isProcessing,
-        isPaused
-    })
+    try {
+        await chrome.storage.local.set({
+            batchQueue: BATCH_QUEUE,
+            processedResults,
+            isProcessing,
+            isPaused
+        })
+    } catch (err: any) {
+        console.error('[Batch] saveState failed:', err?.message || err)
+    }
+}
+
+async function removeStorageKeys(keys: string[]) {
+    if (!keys.length) return
+    try {
+        await chrome.storage.local.remove(keys)
+    } catch (err: any) {
+        console.warn('[Batch] remove storage keys failed:', err?.message || err)
+    }
+}
+
+function collectArchiveStorageKeys(items: BatchItem[]) {
+    return items
+        .map(item => item.archiveStorageKey)
+        .filter((k): k is string => !!k)
 }
 
 chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
@@ -215,6 +254,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
             sendResponse({ success: true })
         } else if (request.action === 'CLEAR_BATCH_RESULTS') {
             await cancelActiveTasks()
+            await removeStorageKeys(collectArchiveStorageKeys(processedResults))
             processedResults = []
             BATCH_QUEUE = []
             isPaused = false
@@ -225,6 +265,8 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
             sendResponse({ success: true })
         } else if (request.action === 'DELETE_BATCH_ITEM') {
             const { url } = request
+            const targets = processedResults.filter(item => item.url === url)
+            await removeStorageKeys(collectArchiveStorageKeys(targets))
             processedResults = processedResults.filter(item => item.url !== url)
             BATCH_QUEUE = BATCH_QUEUE.filter(item => item.url !== url)
 
@@ -344,27 +386,39 @@ async function runBatchItem(item: BatchItem) {
         if (isTaskCancelled(taskUrl)) throw new Error('Cancelled')
 
         const isPdfFormat = item.format === 'pdf'
+        const isLocalArchiveMode = !isPdfFormat && item.options?.imageMode === 'local'
+        const extractTimeoutMs = item.options?.imageMode === 'local'
+            ? EXTRACT_TIMEOUT_LOCAL_IMAGE_MS
+            : EXTRACT_TIMEOUT_DEFAULT_MS
         let response: any = null
+        let lastExtractError: any = null
         for (let i = 0; i < 3; i++) {
             try {
                 if (isTaskCancelled(taskUrl)) break
-                response = await chrome.tabs.sendMessage(tabId, {
-                    action: 'EXTRACT_CONTENT',
+                console.log(`[Batch] Extract start (${i + 1}/3): ${taskUrl}`)
+                response = await sendExtractMessage(tabId, {
+                    action: isLocalArchiveMode ? 'EXTRACT_LOCAL_ARCHIVE' : 'EXTRACT_CONTENT',
                     // PDF mode: always extract as HTML with base64 images
                     format: isPdfFormat ? 'html' : (item.format || 'markdown'),
                     options: isPdfFormat
                         ? { ...item.options, imageMode: 'base64' }
                         : (item.options || { useBase64: true })
-                })
+                }, extractTimeoutMs)
+                console.log(`[Batch] Extract done: ${taskUrl}`)
                 if (response) break
-            } catch (_) {
+            } catch (err: any) {
+                lastExtractError = err
+                const msg = String(err?.message || '')
+                const nonRetryable = msg.includes('归档体积过大') || msg.includes('归档打包超时') || msg.includes('归档编码超时')
+                console.warn(`[Batch] Extract failed (${i + 1}/3): ${taskUrl}`, msg)
+                if (nonRetryable) break
                 await new Promise(r => setTimeout(r, 2000))
             }
         }
 
         if (isTaskCancelled(taskUrl)) throw new Error('Cancelled')
         if (!response || !response.success) {
-            throw new Error(response ? response.error : 'Extraction failed')
+            throw new Error(response ? response.error : (lastExtractError?.message || 'Extraction failed'))
         }
 
         let title = item.title || 'Untitled'
@@ -399,6 +453,22 @@ async function runBatchItem(item: BatchItem) {
                 format: 'pdf',
                 content: pdfResult.data,
                 size: Math.round(pdfResult.data.length * 0.75),
+                status: 'success',
+                timestamp: Date.now()
+            })
+        } else if (isLocalArchiveMode) {
+            if (!response.archiveBase64 && !response.archiveStorageKey) {
+                throw new Error('Local archive generation failed')
+            }
+
+            processedResults.push({
+                url: taskUrl,
+                title: title.trim(),
+                format: item.format || 'markdown',
+                archiveBase64: response.archiveBase64,
+                archiveStorageKey: response.archiveStorageKey,
+                archiveName: response.archiveName || `${title.trim() || 'document'}.zip`,
+                size: response.archiveSize || Math.round((response.archiveBase64?.length || 0) * 0.75),
                 status: 'success',
                 timestamp: Date.now()
             })

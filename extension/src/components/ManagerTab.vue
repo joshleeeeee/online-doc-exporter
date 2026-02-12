@@ -87,6 +87,14 @@ const fetchSingleResult = (url: string): Promise<any> => {
   })
 }
 
+const fetchArchiveBase64ByKey = (key: string): Promise<string | null> => {
+  return new Promise((resolve) => {
+    chrome.storage.local.get([key], (res) => {
+      resolve((res && typeof res[key] === 'string') ? res[key] : null)
+    })
+  })
+}
+
 const handleDownloadZip = async () => {
   const vols = volumes.value.map(v => [...v])
   if (vols.length === 0) return
@@ -117,6 +125,11 @@ const handleDownloadZip = async () => {
         if (item.format === 'pdf') {
           if (item.content) {
             zip.file(`${safeTitle}.pdf`, item.content, { base64: true })
+          }
+        } else if (item.archiveBase64 || item.archiveStorageKey) {
+          const archiveBase64 = item.archiveBase64 || (item.archiveStorageKey ? await fetchArchiveBase64ByKey(item.archiveStorageKey) : null)
+          if (archiveBase64) {
+            zip.file(item.archiveName || `${safeTitle}.zip`, archiveBase64, { base64: true })
           }
         } else {
           zip.file(`${safeTitle}.md`, item.content || '')
@@ -191,7 +204,12 @@ const retryAllFailed = () => {
   batchStore.retryAllFailed()
 }
 
+const isRetryingItem = (url: string) => batchStore.retryingUrls.has(url)
+
 const failedCount = computed(() => batchStore.processedResults.filter(r => r.status === 'failed').length)
+const isListLoading = computed(() =>
+  !batchStore.hasLoadedStatus || (batchStore.isUpdatingStatus && batchStore.processedResults.length === 0 && !batchStore.currentItem)
+)
 
 const openUrl = (url: string) => window.open(url, '_blank')
 
@@ -220,6 +238,21 @@ const handleSingleDownload = async (item: BatchItem) => {
                     a.click()
                     URL.revokeObjectURL(dlUrl)
                 }
+            } else if (data.archiveBase64 || data.archiveStorageKey) {
+                const archiveBase64 = data.archiveBase64 || (data.archiveStorageKey ? await fetchArchiveBase64ByKey(data.archiveStorageKey) : null)
+                if (!archiveBase64) return
+                const byteChars = atob(archiveBase64)
+                const byteArray = new Uint8Array(byteChars.length)
+                for (let i = 0; i < byteChars.length; i++) {
+                    byteArray[i] = byteChars.charCodeAt(i)
+                }
+                const blob = new Blob([byteArray], { type: 'application/zip' })
+                const dlUrl = URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = dlUrl
+                a.download = data.archiveName || `${safeTitle}.zip`
+                a.click()
+                URL.revokeObjectURL(dlUrl)
             } else {
                 // Markdown: existing logic
                 const hasImages = data.images && data.images.length > 0
@@ -300,11 +333,13 @@ const handleSingleDownload = async (item: BatchItem) => {
       <button 
         v-if="failedCount > 0"
         @click="retryAllFailed"
-        class="flex items-center justify-center gap-1.5 h-10 px-3 rounded-xl border-2 border-amber-200 dark:border-amber-900/40 text-amber-600 dark:text-amber-400 text-xs font-bold hover:bg-amber-50 dark:hover:bg-amber-900/10 transition-colors shrink-0"
+        :disabled="batchStore.isRetryingAll"
+        class="flex items-center justify-center gap-1.5 h-10 px-3 rounded-xl border-2 border-amber-200 dark:border-amber-900/40 text-amber-600 dark:text-amber-400 text-xs font-bold hover:bg-amber-50 dark:hover:bg-amber-900/10 transition-colors shrink-0 disabled:opacity-60"
         title="重试全部失败任务"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
-        <span>重试 ({{ failedCount }})</span>
+        <div v-if="batchStore.isRetryingAll" class="w-3.5 h-3.5 border-2 border-amber-400/40 border-t-amber-500 rounded-full animate-spin"></div>
+        <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+        <span>{{ batchStore.isRetryingAll ? '重试中...' : `重试 (${failedCount})` }}</span>
       </button>
     </div>
 
@@ -319,17 +354,25 @@ const handleSingleDownload = async (item: BatchItem) => {
         >
         <span class="text-xs font-bold text-gray-500">全选成品</span>
       </label>
-      <span class="text-[10px] text-gray-400">每卷 ≤ {{ Math.min(VOLUME_SIZE_MB, MEMORY_WATERLINE_MB) }}MB<template v-if="volumeCount > 1"> · 共 {{ volumeCount }} 卷</template></span>
+      <span class="text-[10px] text-gray-400 flex items-center gap-1.5">
+        <span v-if="batchStore.isUpdatingStatus && batchStore.hasLoadedStatus" class="inline-block w-2 h-2 border border-gray-300 border-t-blue-500 rounded-full animate-spin"></span>
+        <span>每卷 ≤ {{ Math.min(VOLUME_SIZE_MB, MEMORY_WATERLINE_MB) }}MB<template v-if="volumeCount > 1"> · 共 {{ volumeCount }} 卷</template></span>
+      </span>
     </div>
 
     <!-- Manager List -->
     <div class="flex-1 overflow-y-auto custom-scrollbar pr-1 -mr-1">
-      <div v-if="batchStore.processedResults.length === 0 && !batchStore.currentItem" class="h-40 flex flex-col items-center justify-center text-gray-400 gap-2 opacity-60 italic">
+      <div v-if="isListLoading" class="h-40 flex flex-col items-center justify-center text-gray-400 gap-2 opacity-80">
+        <div class="w-6 h-6 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
+        <span class="text-xs">正在加载下载列表...</span>
+      </div>
+
+      <div v-if="!isListLoading && batchStore.processedResults.length === 0 && !batchStore.currentItem" class="h-40 flex flex-col items-center justify-center text-gray-400 gap-2 opacity-60 italic">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M19 11H5m14 0c1 0 2 1 2 2v6c0 1-1 2-2 2H5c-1 0-2-1-2-2v-6c0-1 1-2 2-2m14 0V9c0-1-1-2-2-2M5 11V9c0-1 1-2 2-2m10 0V5c0-1-1-2-2-2H9c-1 0-2 1-2 2v2m10 0H7"/></svg>
         <span class="text-xs">暂无下载记录</span>
       </div>
 
-      <div class="space-y-2 pb-4">
+      <div v-else class="space-y-2 pb-4">
         <!-- Current Item (if any) -->
         <div v-if="batchStore.currentItem" class="p-3 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-900/40 rounded-xl flex items-center gap-3 animate-pulse">
            <div class="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin shrink-0"></div>
@@ -375,8 +418,15 @@ const handleSingleDownload = async (item: BatchItem) => {
             <button v-if="item.status === 'success'" @click="handleSingleDownload(item)" class="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-gray-400 hover:text-blue-600" title="常规下载">
                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             </button>
-            <button v-if="item.status === 'failed'" @click="retryItem(item.url)" class="p-1.5 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg text-gray-400 hover:text-amber-600" title="重试">
-               <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+            <button
+              v-if="item.status === 'failed'"
+              @click="retryItem(item.url)"
+              :disabled="isRetryingItem(item.url)"
+              class="p-1.5 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg text-gray-400 hover:text-amber-600 disabled:opacity-60"
+              :title="isRetryingItem(item.url) ? '重试中' : '重试'"
+            >
+               <div v-if="isRetryingItem(item.url)" class="w-3.5 h-3.5 border-2 border-amber-400/40 border-t-amber-500 rounded-full animate-spin"></div>
+               <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
             </button>
             <button @click="openUrl(item.url)" class="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-400 hover:text-blue-500" title="打开链接">
                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>

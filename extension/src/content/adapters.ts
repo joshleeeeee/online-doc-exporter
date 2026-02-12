@@ -17,6 +17,8 @@ export abstract class BaseAdapter {
     format: string;
     options: any;
     images: { filename: string; base64: string }[] = [];
+    imageProcessCache = new Map<string, Promise<string>>();
+    imageStats = { total: 0, done: 0, failed: 0, lastLogAt: 0 };
 
     constructor(format: string, options: any = {}) {
         this.format = format;
@@ -26,10 +28,17 @@ export abstract class BaseAdapter {
     abstract extract(): Promise<{ content: string; images: any[] }>;
     abstract scanLinks(): Promise<{ title: string; url: string }[]>;
 
-    async processImage(src: string): Promise<string> {
-        if (!src) return '';
+    logImageProgress(force = false) {
+        const now = Date.now();
+        if (!force && now - this.imageStats.lastLogAt < 2000) return;
+        this.imageStats.lastLogAt = now;
+        if (this.imageStats.total === 0) return;
+        console.log(`[ImageProcess] ${this.imageStats.done}/${this.imageStats.total} done, failed=${this.imageStats.failed}`);
+    }
 
-        const mode = this.options.imageMode || 'original';
+    async processImageInternal(src: string, mode: string): Promise<string> {
+        const timeoutMs = this.options?.imageTimeoutMs || 20_000;
+        const retries = this.options?.imageRetries ?? 2;
 
         // 1. Upload to OSS/MinIO
         if (mode === 'minio' && this.options.imageConfig && this.options.imageConfig.enabled) {
@@ -39,7 +48,7 @@ export abstract class BaseAdapter {
                     const res = await fetch(src);
                     blob = await res.blob();
                 } else {
-                    blob = await ImageUtils.fetchBlob(src);
+                    blob = await ImageUtils.fetchBlob(src, { timeoutMs, retries });
                 }
 
                 const ext = blob.type.split('/')[1] || 'png';
@@ -65,7 +74,7 @@ export abstract class BaseAdapter {
                     const res = await fetch(src);
                     blob = await res.blob();
                 } else {
-                    blob = await ImageUtils.fetchBlob(src);
+                    blob = await ImageUtils.fetchBlob(src, { timeoutMs, retries });
                 }
 
                 const ext = blob.type.split('/')[1] || 'png';
@@ -90,6 +99,41 @@ export abstract class BaseAdapter {
         }
 
         return src;
+    }
+
+    async processImage(src: string): Promise<string> {
+        if (!src) return '';
+
+        const mode = this.options.imageMode || 'original';
+        if (mode === 'original') return src;
+
+        const cacheKey = `${mode}:${src}`;
+        const cached = this.imageProcessCache.get(cacheKey);
+        if (cached) return await cached;
+
+        this.imageStats.total += 1;
+        this.logImageProgress();
+
+        const task = (async () => {
+            let failed = false;
+            try {
+                const result = await this.processImageInternal(src, mode);
+                if (result === src && mode !== 'original' && !src.startsWith('data:')) {
+                    failed = true;
+                }
+                return result;
+            } catch (_) {
+                failed = true;
+                return src;
+            } finally {
+                this.imageStats.done += 1;
+                if (failed) this.imageStats.failed += 1;
+                this.logImageProgress(true);
+            }
+        })();
+
+        this.imageProcessCache.set(cacheKey, task);
+        return await task;
     }
 }
 
@@ -374,6 +418,10 @@ export class FeishuAdapter extends BaseAdapter {
         await flushTableBuffer();
         if (this.format === "html" && listState) {
             output += listState === "ol" ? "</ol>" : "</ul>";
+        }
+
+        if (this.imageStats.total > 0) {
+            console.log(`[ImageProcess] Completed ${this.imageStats.done}/${this.imageStats.total}, failed=${this.imageStats.failed}`);
         }
 
         return { content: output, images: this.images };

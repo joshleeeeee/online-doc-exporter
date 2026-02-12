@@ -1,6 +1,10 @@
 import { PlatformAdapterFactory } from './adapters';
+import JSZip from 'jszip';
 
 class App {
+    static readonly LOCAL_ARCHIVE_TIMEOUT_MS = 3 * 60_000;
+    static readonly LOCAL_ARCHIVE_INLINE_MAX_BYTES = 8 * 1024 * 1024;
+
     static init() {
         // Check if context is still valid
         if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) {
@@ -21,6 +25,20 @@ class App {
                                 sendResponse({ success: true, title: document.title, content: result });
                             }
                         })
+                        .catch(error => sendResponse({ success: false, error: error.message }));
+                    return true;
+                }
+
+                if (request.action === 'EXTRACT_AND_DOWNLOAD_LOCAL') {
+                    App.handleLocalDownload(request.format, request.options)
+                        .then(result => sendResponse({ success: true, title: document.title, ...result }))
+                        .catch(error => sendResponse({ success: false, error: error.message }));
+                    return true;
+                }
+
+                if (request.action === 'EXTRACT_LOCAL_ARCHIVE') {
+                    App.handleLocalArchive(request.format, request.options)
+                        .then(result => sendResponse({ success: true, title: document.title, ...result }))
                         .catch(error => sendResponse({ success: false, error: error.message }));
                     return true;
                 }
@@ -297,6 +315,155 @@ class App {
             console.error('Extraction Error:', e);
             throw e;
         }
+    }
+
+    static sanitizeFilename(name: string) {
+        return (name || 'document').replace(/[\\/:*?"<>|]/g, "_");
+    }
+
+    static async withTimeout<T>(task: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+        let timer: number | null = null;
+        try {
+            return await Promise.race([
+                task,
+                new Promise<T>((_, reject) => {
+                    timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+                })
+            ]);
+        } finally {
+            if (timer) window.clearTimeout(timer);
+        }
+    }
+
+    static blobToBase64Data(blob: Blob): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const full = String(reader.result || '');
+                const comma = full.indexOf(',');
+                resolve(comma >= 0 ? full.slice(comma + 1) : full);
+            };
+            reader.onerror = () => reject(reader.error || new Error('Blob to base64 failed'));
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    static storageSet(items: Record<string, any>) {
+        return new Promise<void>((resolve, reject) => {
+            chrome.storage.local.set(items, () => {
+                const err = chrome.runtime.lastError;
+                if (err) reject(new Error(err.message));
+                else resolve();
+            });
+        });
+    }
+
+    static triggerFileDownload(blob: Blob, filename: string) {
+        const dlUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = dlUrl;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(dlUrl);
+    }
+
+    static async handleLocalDownload(format: 'markdown' | 'html', options: any) {
+        const result = await App.handleExtraction(format, options) as { content?: string; images?: any[] };
+        const content = result?.content || '';
+        const images = Array.isArray(result?.images) ? result.images : [];
+        const safeTitle = App.sanitizeFilename(document.title || 'document');
+
+        if (images.length > 0) {
+            const zip = new JSZip();
+            const ext = format === 'html' ? '.html' : '.md';
+            const contentFilename = `${safeTitle}${ext}`;
+            const imgFolder = zip.folder('images');
+
+            images.forEach((img: any) => {
+                if (img.base64 && typeof img.base64 === 'string' && img.base64.includes(',')) {
+                    const base64Data = img.base64.split(',')[1];
+                    imgFolder?.file(img.filename, base64Data, { base64: true });
+                }
+            });
+
+            zip.file(contentFilename, content);
+            const blob = await zip.generateAsync({ type: 'blob' });
+            App.triggerFileDownload(blob, `${safeTitle}.zip`);
+            return { hasImages: true, imageCount: images.length };
+        }
+
+        const ext = format === 'html' ? '.html' : '.md';
+        const mime = format === 'html' ? 'text/html;charset=utf-8' : 'text/markdown;charset=utf-8';
+        const blob = new Blob([content], { type: mime });
+        App.triggerFileDownload(blob, `${safeTitle}${ext}`);
+        return { hasImages: false, imageCount: 0 };
+    }
+
+    static async handleLocalArchive(format: 'markdown' | 'html', options: any) {
+        console.log('[LocalArchive] Start archive extraction');
+        const result = await App.handleExtraction(format, options) as { content?: string; images?: any[] };
+        const content = result?.content || '';
+        const images = Array.isArray(result?.images) ? result.images : [];
+        const safeTitle = App.sanitizeFilename(document.title || 'document');
+
+        const zip = new JSZip();
+        const ext = format === 'html' ? '.html' : '.md';
+        const contentFilename = `${safeTitle}${ext}`;
+        const imgFolder = zip.folder('images');
+
+        images.forEach((img: any) => {
+            if (img.base64 && typeof img.base64 === 'string' && img.base64.includes(',')) {
+                const base64Data = img.base64.split(',')[1];
+                imgFolder?.file(img.filename, base64Data, { base64: true });
+            }
+        });
+
+        zip.file(contentFilename, content);
+        console.log(`[LocalArchive] Build zip: content + ${images.length} images`);
+        let lastLoggedStep = -1;
+        const archiveBlob = await App.withTimeout(
+            zip.generateAsync(
+                { type: 'blob', compression: 'STORE' },
+                (meta) => {
+                    const step = Math.floor(meta.percent / 10);
+                    if (step !== lastLoggedStep) {
+                        lastLoggedStep = step;
+                        console.log(`[LocalArchive] Packaging ${Math.round(meta.percent)}%`);
+                    }
+                }
+            ),
+            App.LOCAL_ARCHIVE_TIMEOUT_MS,
+            '本地归档打包超时（请减少单次抓取内容）'
+        );
+
+        console.log(`[LocalArchive] Zip size: ${(archiveBlob.size / (1024 * 1024)).toFixed(2)} MB`);
+
+        const archiveBase64 = await App.withTimeout(
+            App.blobToBase64Data(archiveBlob),
+            60_000,
+            '归档编码超时（请减少单次抓取内容）'
+        );
+        const archiveSize = archiveBlob.size;
+        console.log('[LocalArchive] Archive ready');
+
+        if (archiveSize > App.LOCAL_ARCHIVE_INLINE_MAX_BYTES) {
+            const storageKey = `localArchive:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+            await App.storageSet({ [storageKey]: archiveBase64 });
+            console.log(`[LocalArchive] Stored archive in chrome.storage.local: ${storageKey}`);
+            return {
+                archiveStorageKey: storageKey,
+                archiveName: `${safeTitle}.zip`,
+                archiveSize,
+                imageCount: images.length
+            };
+        }
+
+        return {
+            archiveBase64,
+            archiveName: `${safeTitle}.zip`,
+            archiveSize,
+            imageCount: images.length
+        };
     }
 }
 

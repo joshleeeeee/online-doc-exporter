@@ -9,6 +9,9 @@ export interface BatchItem {
     status?: 'pending' | 'processing' | 'success' | 'failed'
     size?: number
     error?: string
+    archiveBase64?: string
+    archiveName?: string
+    archiveStorageKey?: string
 }
 
 export const useBatchStore = defineStore('batch', () => {
@@ -21,8 +24,21 @@ export const useBatchStore = defineStore('batch', () => {
     const progressPercent = ref(0)
     const activeCount = ref(0)
     const effectiveConcurrency = ref(1)
+    const isUpdatingStatus = ref(false)
+    const hasLoadedStatus = ref(false)
+    const isPausing = ref(false)
+    const isResuming = ref(false)
+    const isRetryingAll = ref(false)
+    const retryingUrls = ref<Set<string>>(new Set())
+
+    const sendMessage = <T = any>(payload: any) => {
+        return new Promise<T>((resolve) => {
+            chrome.runtime.sendMessage(payload, (res) => resolve(res as T))
+        })
+    }
 
     const updateStatus = async () => {
+        isUpdatingStatus.value = true
         return new Promise<void>((resolve) => {
             chrome.runtime.sendMessage({ action: 'GET_BATCH_STATUS' }, (res) => {
                 if (res) {
@@ -39,41 +55,78 @@ export const useBatchStore = defineStore('batch', () => {
 
                     progressPercent.value = total > 0 ? (finishedCount / total) * 100 : 0
                 }
+                hasLoadedStatus.value = true
+                isUpdatingStatus.value = false
                 resolve()
             })
         })
     }
 
-    const startBatch = (items: BatchItem[], format: string, options: any) => {
-        chrome.runtime.sendMessage({
+    const startBatch = async (items: BatchItem[], format: string, options: any) => {
+        await sendMessage({
             action: 'START_BATCH_PROCESS',
             items,
             format,
             options
-        }, () => updateStatus())
-    }
-
-    const pauseBatch = () => {
-        chrome.runtime.sendMessage({ action: 'PAUSE_BATCH' }, () => updateStatus())
-    }
-
-    const resumeBatch = () => {
-        chrome.runtime.sendMessage({ action: 'RESUME_BATCH' }, () => updateStatus())
-    }
-
-    const clearResults = () => {
-        chrome.runtime.sendMessage({ action: 'CLEAR_BATCH_RESULTS' }, () => {
-            processedResults.value = []
-            updateStatus()
         })
+        await updateStatus()
     }
 
-    const retryItem = (url: string) => {
-        chrome.runtime.sendMessage({ action: 'RETRY_BATCH_ITEM', url }, () => updateStatus())
+    const pauseBatch = async () => {
+        if (isPausing.value) return
+        isPausing.value = true
+        // Optimistic update to avoid perceived freeze.
+        isPaused.value = true
+        try {
+            await sendMessage({ action: 'PAUSE_BATCH' })
+            await updateStatus()
+        } finally {
+            isPausing.value = false
+        }
     }
 
-    const retryAllFailed = () => {
-        chrome.runtime.sendMessage({ action: 'RETRY_ALL_FAILED' }, () => updateStatus())
+    const resumeBatch = async () => {
+        if (isResuming.value) return
+        isResuming.value = true
+        // Optimistic update to avoid perceived freeze.
+        isPaused.value = false
+        try {
+            await sendMessage({ action: 'RESUME_BATCH' })
+            await updateStatus()
+        } finally {
+            isResuming.value = false
+        }
+    }
+
+    const clearResults = async () => {
+        await sendMessage({ action: 'CLEAR_BATCH_RESULTS' })
+        processedResults.value = []
+        await updateStatus()
+    }
+
+    const retryItem = async (url: string) => {
+        const next = new Set(retryingUrls.value)
+        next.add(url)
+        retryingUrls.value = next
+        try {
+            await sendMessage({ action: 'RETRY_BATCH_ITEM', url })
+            await updateStatus()
+        } finally {
+            const done = new Set(retryingUrls.value)
+            done.delete(url)
+            retryingUrls.value = done
+        }
+    }
+
+    const retryAllFailed = async () => {
+        if (isRetryingAll.value) return
+        isRetryingAll.value = true
+        try {
+            await sendMessage({ action: 'RETRY_ALL_FAILED' })
+            await updateStatus()
+        } finally {
+            isRetryingAll.value = false
+        }
     }
 
     return {
@@ -86,6 +139,12 @@ export const useBatchStore = defineStore('batch', () => {
         progressPercent,
         activeCount,
         effectiveConcurrency,
+        isUpdatingStatus,
+        hasLoadedStatus,
+        isPausing,
+        isResuming,
+        isRetryingAll,
+        retryingUrls,
         updateStatus,
         startBatch,
         pauseBatch,

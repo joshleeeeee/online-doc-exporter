@@ -1,21 +1,50 @@
 export class ImageUtils {
+    static readonly DEFAULT_FETCH_TIMEOUT_MS = 20_000;
+    static readonly DEFAULT_FETCH_RETRIES = 2;
+
     /**
      * Fetch image as Blob (handles credentials/referrer)
      * @param url 
      * @returns {Promise<Blob>}
      */
-    static async fetchBlob(url: string): Promise<Blob> {
-        try {
-            const response = await fetch(url, { referrerPolicy: 'no-referrer', credentials: 'include' });
-            const contentType = response.headers.get("content-type");
-            if (contentType && (contentType.includes("application/json") || contentType.includes("text/html"))) {
-                throw new Error("Response is not an image");
+    static async fetchBlob(url: string, opts: { timeoutMs?: number; retries?: number } = {}): Promise<Blob> {
+        const timeoutMs = Math.max(1_000, Number(opts.timeoutMs || this.DEFAULT_FETCH_TIMEOUT_MS));
+        const retries = Math.max(0, Number(opts.retries ?? this.DEFAULT_FETCH_RETRIES));
+
+        let lastError: unknown = null;
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            const controller = new AbortController();
+            const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+
+            try {
+                const response = await fetch(url, {
+                    referrerPolicy: 'no-referrer',
+                    credentials: 'include',
+                    signal: controller.signal
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status} ${response.statusText}`);
+                }
+
+                const contentType = response.headers.get("content-type");
+                if (contentType && (contentType.includes("application/json") || contentType.includes("text/html"))) {
+                    throw new Error("Response is not an image");
+                }
+                return await response.blob();
+            } catch (e) {
+                lastError = e;
+                const isLast = attempt >= retries;
+                console.warn(`Image fetch failed (attempt ${attempt + 1}/${retries + 1}):`, url, e);
+                if (!isLast) {
+                    await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+                }
+            } finally {
+                window.clearTimeout(timer);
             }
-            return await response.blob();
-        } catch (e) {
-            console.warn('Image fetch failed:', url, e);
-            throw e;
         }
+
+        throw lastError instanceof Error ? lastError : new Error('Image fetch failed');
     }
 
     /**
