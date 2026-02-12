@@ -99,6 +99,43 @@ export class FeishuAdapter extends BaseAdapter {
         const links = new Set<string>();
         const results: { title: string; url: string }[] = [];
 
+        // --- 1. Scan Wiki sidebar tree nodes (workspace-tree-view-node) ---
+        const treeNodes = document.querySelectorAll('.workspace-tree-view-node[data-node-uid]');
+        console.log(`FeishuAdapter: Found ${treeNodes.length} wiki sidebar tree nodes`);
+
+        treeNodes.forEach(node => {
+            // Skip folder-type nodes: their expand arrow has --has-icon class and contains an SVG
+            const expandArrow = node.querySelector('.workspace-tree-view-node-expand-arrow');
+            if (expandArrow && (
+                expandArrow.classList.contains('workspace-tree-view-node-expand-arrow--has-icon') ||
+                expandArrow.querySelector('svg')
+            )) return;
+
+            const nodeUid = node.getAttribute('data-node-uid') || '';
+            // Extract wikiToken from data-node-uid, e.g. "...&wikiToken=GGvdwRQ32icbnTkT1d3c5NrMnlZ"
+            const tokenMatch = nodeUid.match(/wikiToken=([^&]+)/);
+            if (!tokenMatch) return;
+
+            const wikiToken = tokenMatch[1];
+            const url = `${window.location.origin}/wiki/${wikiToken}`;
+
+            if (links.has(url)) return;
+
+            // Find the title from workspace-tree-view-node-content span
+            const titleEl = node.querySelector('.workspace-tree-view-node-content');
+            let title = '';
+            if (titleEl) {
+                title = titleEl.getAttribute('title') || titleEl.textContent?.trim() || '';
+            }
+
+            title = title.trim().replace(/^(快捷方式|便捷方式)[:：]\s*/, "");
+            if (!title) return;
+
+            links.add(url);
+            results.push({ title, url });
+        });
+
+        // --- 2. Scan document content links (existing logic) ---
         const selectors = [
             'a.mention-doc',
             'a.file-item-link',
@@ -167,6 +204,7 @@ export class FeishuAdapter extends BaseAdapter {
             results.push({ title, url });
         });
 
+        console.log(`FeishuAdapter: Total scanned links: ${results.length}`);
         return results;
     }
 
