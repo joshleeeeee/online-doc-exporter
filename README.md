@@ -1,10 +1,10 @@
 # 🚀 OnlineDocExporter (在线文档助手)
 
-[![Version](https://img.shields.io/badge/version-v1.4.0-blue.svg)](https://github.com/joshleeeeee/online-doc-exporter)
+[![Version](https://img.shields.io/badge/version-v1.5.0-blue.svg)](https://github.com/joshleeeeee/online-doc-exporter)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Chrome%20%7C%20Edge%20%7C%20Lark-lightgrey.svg)](https://github.com/joshleeeeee/online-doc-exporter)
 
-一款极致小巧、功能强大的在线文档转换与导出工具。支持将飞书/Lark 等文档（包括受保护无法复制的文档）一键转换为 Markdown 或富文本，并支持强大的批量下载功能。
+一款极致小巧、功能强大的在线文档转换与导出工具。支持将飞书/Lark 等文档（包括受保护无法复制的文档）一键转换为 Markdown、富文本或 PDF（含书签），并支持强大的批量下载功能。
 
 ---
 
@@ -24,6 +24,7 @@
 ## ✨ 核心特性
 
 - **🚀 极速导出**: 一键将当前文档转换为 Markdown 或富文本。
+- **📄 PDF 导出**: 一键下载为高质量 PDF，自动根据 H1/H2/H3 标题生成 **原生 PDF 书签**，静默生成无需打印对话框。
 - **🤖 多平台适配**: 完美支持 **飞书/Lark** 文档及 **BOSS 直聘** 职位信息提取。
 - **📦 批量抓取**: 自动扫描页面中的文档链接或职位卡片，支持一键排队抓取。
 - **🔗 智能合并**: 针对 BOSS 直聘等场景，支持将多篇内容自动合并为一份文档导出。
@@ -54,13 +55,17 @@
    - 打开飞书/Lark 文档页面。
    - 点击插件图标，在设置区选择 **图片处理模式**（保留原链、Base64、本地打包或图床上传）。
    - 在“单页复制”面板选择 Markdown 或 富文本。
-2. **批量抓取**:
+2. **PDF 导出** *(v1.5.0 新增)*:
+   - 点击插件图标，选择 **"下载为 PDF"**。
+   - 插件自动提取文档内容，通过 Chrome DevTools Protocol 生成高品质 PDF。
+   - PDF 自动包含 **书签目录**（基于 H1/H2/H3 标题结构），便于大文档导航。
+3. **批量抓取**:
    - 在包含多个文档链接的页面（如知识库首页、列表页）点击“批量抓取”。
    - 点击“扫描链接”，勾选目标文档后点击“开始抓取”。
-3. **高级设置 (图床/本地)**:
+4. **高级设置 (图床/本地)**:
    - 点击右上角设置图标，可以配置 OSS/MinIO/S3 的详细参数。
    - 如果选择“下载到本地 (ZIP)”，抓取完成后在下载中心打包下载时，图片会自动包含在压缩包中。
-4. **下载管理**:
+5. **下载管理**:
    - 进入“下载中心”，查看抓取进度。
    - 抓取完成后可单独下载或点击“打包下载”获取所有文件。
 
@@ -72,6 +77,8 @@
 - [x] **BOSS 直聘招聘信息提取** (v1.3.0)
 - [x] **智能网站支持检测** (v1.3.0)
 - [x] **UI 极简风格重构与下载中心优化** (v1.4.0)
+- [x] **PDF 导出与原生书签** (v1.5.0)
+- [ ] **批量 PDF 导出**: 将批量抓取结果直接导出为 PDF 文件。
 - [ ] **多平台兼容**: 持续扩展支持 语雀、钉钉文档、Notion 等。
 - [ ] **自定义模版**: 允许用户自定义导出的 Markdown 样式与 Frontmatter。
 

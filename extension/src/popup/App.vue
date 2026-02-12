@@ -157,6 +157,68 @@ const executeCopy = async (format: 'markdown' | 'html') => {
   }
 }
 
+const executePDF = async () => {
+  if (isExtracting.value) return
+
+  isExtracting.value = true
+  extractingFormat.value = 'pdf'
+
+  const { scrollWaitTime, ossConfig } = settings
+  const imageConfig = {
+    enabled: false,
+    ...ossConfig
+  }
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (!tab?.id) throw new Error('找不到活动标签页')
+
+    // Always extract as HTML with base64 images for PDF
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      action: 'EXTRACT_CONTENT',
+      format: 'html',
+      options: { imageMode: 'base64', scrollWaitTime, imageConfig }
+    })
+
+    if (response && response.success) {
+      // Store content for the print rendering page
+      await chrome.storage.local.set({
+        printData: {
+          title: response.title || 'document',
+          content: response.content,
+          images: response.images || []
+        }
+      })
+
+      triggerToast('PDF 正在生成中...')
+
+      // Delegate PDF generation to background (CDP + bookmarks)
+      const result = await chrome.runtime.sendMessage({
+        action: 'GENERATE_PDF',
+        title: response.title || 'document'
+      })
+
+      if (result && result.success) {
+        triggerToast('PDF 已生成并下载')
+      } else {
+        throw new Error(result?.error || 'PDF 生成失败')
+      }
+    } else {
+      throw new Error(response?.error || '解析失败')
+    }
+  } catch (e: any) {
+    console.error(e)
+    if (e.message.includes('Could not establish connection')) {
+      triggerToast('插件已更新，请刷新原页面')
+    } else {
+      triggerToast('错误: ' + e.message)
+    }
+  } finally {
+    isExtracting.value = false
+    extractingFormat.value = ''
+  }
+}
+
 let statusTimer: number | null = null
 onMounted(() => {
   const manifest = chrome.runtime.getManifest()
@@ -275,6 +337,24 @@ onUnmounted(() => {
             </div>
             <span class="text-xl font-black text-slate-800 dark:text-white tracking-tight">复制 Markdown</span>
             <div class="absolute top-3 right-5 text-[9px] font-black text-blue-500/40 uppercase tracking-widest">Recommended</div>
+          </button>
+
+          <!-- PDF Export -->
+          <button 
+            @click="executePDF"
+            :disabled="!isSupported || isExtracting"
+            class="group flex items-center justify-between p-4 px-6 rounded-2xl bg-slate-100 dark:bg-slate-800/30 border border-transparent hover:bg-slate-200 dark:hover:bg-slate-800/60 transition-all duration-300 disabled:opacity-50"
+          >
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center text-rose-500 dark:text-rose-400">
+                <template v-if="isExtracting && extractingFormat === 'pdf'">
+                   <div class="w-4 h-4 border-2 border-rose-400 border-t-transparent rounded-full animate-spin"></div>
+                </template>
+                <span v-else class="text-[10px] font-bold font-mono">PDF</span>
+              </div>
+              <span class="text-sm font-bold text-slate-600 dark:text-slate-300">下载为 PDF</span>
+            </div>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-300 dark:text-slate-700 group-hover:text-rose-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
           </button>
 
           <!-- Secondary Action: Rich Text -->

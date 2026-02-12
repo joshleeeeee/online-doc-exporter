@@ -10,10 +10,10 @@ export const content = {
             repo: "GitHub Repo"
         },
         hero: {
-            badge: "v1.4.0 is out now",
+            badge: "v1.5.0 is out now",
             titleStart: "Export Everything,",
             titleEnd: "Own Your Data",
-            description: "The ultimate universal content extractor for your browser. Now with a vibrant, minimalist design tailored for v1.4.0. From cloud docs to job listings, effortlessly convert online content into clean Markdown or Rich Text with smart batch scanning.",
+            description: "The ultimate universal content extractor for your browser. v1.5.0 introduces PDF Export with native bookmarks. From cloud docs to job listings, effortlessly convert online content into clean Markdown, Rich Text, or beautifully bookmarked PDFs.",
             addToChrome: "Add to Chrome",
             exploreFeatures: "Explore Features"
         },
@@ -24,6 +24,10 @@ export const content = {
                 {
                     title: "Universal Export",
                     description: "Instantly convert online content into perfect Markdown or Rich Text. Preserves formatting, tables, and code blocks."
+                },
+                {
+                    title: "PDF with Bookmarks",
+                    description: "One-click export to high-quality PDF with native outline bookmarks auto-generated from H1/H2/H3 headings. Powered by Chrome DevTools Protocol."
                 },
                 {
                     title: "Multi-Source Support",
@@ -99,10 +103,10 @@ export const content = {
             repo: "GitHub 仓库"
         },
         hero: {
-            badge: "v1.4.0 现已发布",
+            badge: "v1.5.0 现已发布",
             titleStart: "万物皆可导出",
             titleEnd: "数据回归自我",
-            description: "跨平台的在线内容提取神器。v1.4.0 采用全新的“灵动深蓝”极简设计，从云端文档到招聘信息，一键将碎片内容转化为精美 Markdown。内置智能扫描与自动化流，让知识管理更高效、更纯粹。",
+            description: "跨平台的在线内容提取神器。v1.5.0 新增 PDF 导出功能，自动生成原生书签目录。从云端文档到招聘信息，一键将碎片内容转化为 Markdown、富文本或高品质 PDF。内置智能扫描与自动化流，让知识管理更高效、更纯粹。",
             addToChrome: "添加到 Chrome",
             exploreFeatures: "探索功能"
         },
@@ -113,6 +117,10 @@ export const content = {
                 {
                     title: "全能转换",
                     description: "毫秒级将在线内容转换为完美的 Markdown 或富文本，保留表格、代码块及复杂排版。"
+                },
+                {
+                    title: "PDF 导出与书签",
+                    description: "一键导出为高质量 PDF，自动根据 H1/H2/H3 标题生成原生 PDF 书签目录。基于 Chrome DevTools Protocol，矢量文字可搜索可选中。"
                 },
                 {
                     title: "多平台兼容",
