@@ -36,6 +36,63 @@ export abstract class BaseAdapter {
         console.log(`[ImageProcess] ${this.imageStats.done}/${this.imageStats.total} done, failed=${this.imageStats.failed}`);
     }
 
+    private sanitizePathSegment(value: string): string {
+        const cleaned = (value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[\\/:*?"<>|]/g, '_')
+            .replace(/\s+/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_+|_+$/g, '');
+        return (cleaned || 'document').slice(0, 48);
+    }
+
+    private inferImageExt(blob: Blob, src: string): string {
+        const mimeSubtype = (blob.type.split('/')[1] || '').toLowerCase();
+        const mimeExt = mimeSubtype.split('+')[0];
+        if (/^[a-z0-9]{2,10}$/.test(mimeExt)) return mimeExt;
+        const fromSrc = src.match(/\.([a-z0-9]{2,10})(?:[?#]|$)/i)?.[1]?.toLowerCase();
+        return fromSrc || 'png';
+    }
+
+    private shortHashFromString(input: string): string {
+        // 32-bit FNV-1a hash as deterministic fallback when crypto.subtle is unavailable.
+        let hash = 0x811c9dc5;
+        for (let i = 0; i < input.length; i++) {
+            hash ^= input.charCodeAt(i);
+            hash = Math.imul(hash, 0x01000193);
+        }
+        return (hash >>> 0).toString(16).padStart(8, '0');
+    }
+
+    private async shortHashFromBlob(blob: Blob, src: string): Promise<string> {
+        const seed = `${blob.type}|${blob.size}|${src}`;
+        try {
+            if (globalThis.crypto?.subtle) {
+                const prefix = new TextEncoder().encode(seed);
+                const sample = new Uint8Array(await blob.slice(0, 64 * 1024).arrayBuffer());
+                const merged = new Uint8Array(prefix.length + sample.length);
+                merged.set(prefix, 0);
+                merged.set(sample, prefix.length);
+                const digest = await crypto.subtle.digest('SHA-1', merged);
+                const bytes = new Uint8Array(digest).slice(0, 4);
+                return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+            }
+        } catch (_) {
+            // Fall through to deterministic string hash.
+        }
+        return this.shortHashFromString(seed);
+    }
+
+    private async buildLocalImageFilename(blob: Blob, src: string): Promise<string> {
+        const ext = this.inferImageExt(blob, src);
+        const seq = String(this.images.length + 1).padStart(4, '0');
+        const preferredTitle = this.options?.batchItemTitle || document.title || 'document';
+        const docSegment = this.sanitizePathSegment(preferredTitle);
+        const hash = await this.shortHashFromBlob(blob, src);
+        return `${docSegment}/image_${seq}_${hash}.${ext}`;
+    }
+
     async processImageInternal(src: string, mode: string): Promise<string> {
         const timeoutMs = this.options?.imageTimeoutMs || 20_000;
         const retries = this.options?.imageRetries ?? 2;
@@ -77,8 +134,7 @@ export abstract class BaseAdapter {
                     blob = await ImageUtils.fetchBlob(src, { timeoutMs, retries });
                 }
 
-                const ext = blob.type.split('/')[1] || 'png';
-                const filename = `image_${this.images.length + 1}_${Date.now().toString().slice(-4)}.${ext}`;
+                const filename = await this.buildLocalImageFilename(blob, src);
 
                 const reader = new FileReader();
                 const base64 = await new Promise<string>((resolve) => {
@@ -138,6 +194,12 @@ export abstract class BaseAdapter {
 }
 
 export class FeishuAdapter extends BaseAdapter {
+    private normalizeScannedTitle(title: string): string {
+        return title
+            .trim()
+            .replace(/^(shortcut|快捷方式|便捷方式)\s*[:：]\s*/i, "");
+    }
+
     async scanLinks(): Promise<{ title: string; url: string }[]> {
         console.log('FeishuAdapter: Starting link scan...');
         const links = new Set<string>();
@@ -172,7 +234,7 @@ export class FeishuAdapter extends BaseAdapter {
                 title = titleEl.getAttribute('title') || titleEl.textContent?.trim() || '';
             }
 
-            title = title.trim().replace(/^(快捷方式|便捷方式)[:：]\s*/, "");
+            title = this.normalizeScannedTitle(title);
             if (!title) return;
 
             links.add(url);
@@ -255,7 +317,7 @@ export class FeishuAdapter extends BaseAdapter {
             }
             if (!title) title = node.textContent?.trim() || '';
 
-            title = title.trim().replace(/^(快捷方式|便捷方式)[:：]\s*/, "");
+            title = this.normalizeScannedTitle(title);
 
             if (!title) return;
 

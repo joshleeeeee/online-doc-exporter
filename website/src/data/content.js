@@ -10,10 +10,10 @@ export const content = {
             repo: "GitHub Repo"
         },
         hero: {
-            badge: "v1.6.1 is out now",
+            badge: "v1.6.2 is out now",
             titleStart: "Export Everything,",
             titleEnd: "Own Your Data",
-            description: "The ultimate universal content extractor for your browser. v1.6.1 adds auto scroll scanning, failed-task retry, and volume-split ZIP export for large batches. From cloud docs to job listings, effortlessly convert online content into clean Markdown, Rich Text, or beautifully bookmarked PDFs.",
+            description: "The ultimate universal content extractor for your browser. v1.6.2 improves batch image naming with title-based folders plus hash suffixes, and removes Shortcut title prefixes for cleaner exports. From cloud docs to job listings, effortlessly convert online content into clean Markdown, Rich Text, or beautifully bookmarked PDFs.",
             addToChrome: "Add to Chrome",
             exploreFeatures: "Explore Features"
         },
@@ -103,10 +103,10 @@ export const content = {
             repo: "GitHub 仓库"
         },
         hero: {
-            badge: "v1.6.1 现已发布",
+            badge: "v1.6.2 现已发布",
             titleStart: "万物皆可导出",
             titleEnd: "数据回归自我",
-            description: "跨平台的在线内容提取神器。v1.6.1 新增自动滚动扫描、失败任务重试与分卷 ZIP 打包，大批量抓取更稳更省心。从云端文档到招聘信息，一键将碎片内容转化为 Markdown、富文本或高品质 PDF。内置智能扫描与自动化流，让知识管理更高效、更纯粹。",
+            description: "跨平台的在线内容提取神器。v1.6.2 优化批量导出图片命名（按任务标题分目录并追加短哈希），并修复 Shortcut 标题前缀残留，导出结果更干净更稳定。从云端文档到招聘信息，一键将碎片内容转化为 Markdown、富文本或高品质 PDF。内置智能扫描与自动化流，让知识管理更高效、更纯粹。",
             addToChrome: "添加到 Chrome",
             exploreFeatures: "探索功能"
         },

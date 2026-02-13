@@ -401,8 +401,8 @@ async function runBatchItem(item: BatchItem) {
                     // PDF mode: always extract as HTML with base64 images
                     format: isPdfFormat ? 'html' : (item.format || 'markdown'),
                     options: isPdfFormat
-                        ? { ...item.options, imageMode: 'base64' }
-                        : (item.options || { useBase64: true })
+                        ? { ...item.options, imageMode: 'base64', batchItemTitle: item.title }
+                        : { ...(item.options || { useBase64: true }), batchItemTitle: item.title }
                 }, extractTimeoutMs)
                 console.log(`[Batch] Extract done: ${taskUrl}`)
                 if (response) break
