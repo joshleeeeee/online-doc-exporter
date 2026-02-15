@@ -276,7 +276,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="w-full h-full bg-slate-50 dark:bg-[#0B1020] text-slate-800 dark:text-slate-100 flex flex-col overflow-hidden relative">
+  <div class="w-full h-full min-h-0 bg-slate-50 dark:bg-[#0B1020] text-slate-800 dark:text-slate-100 flex flex-col overflow-hidden relative">
     <!-- Ambient Background Light (Dark Mode) -->
     <div class="absolute -top-20 -right-20 w-64 h-64 bg-blue-600/10 blur-[100px] rounded-full pointer-events-none"></div>
     <div class="absolute -bottom-20 -left-20 w-64 h-64 bg-indigo-600/10 blur-[100px] rounded-full pointer-events-none"></div>
@@ -388,7 +388,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Content Area -->
-    <main class="flex-1 overflow-y-auto p-5 custom-scrollbar relative z-10">
+    <main class="flex-1 min-h-0 overflow-y-auto p-5 custom-scrollbar relative z-10">
       <!-- Main Tab -->
       <div v-if="activeTab === 'main'" class="h-full flex flex-col pt-0 fade-in">
 

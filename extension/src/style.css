@@ -1,80 +1,82 @@
 @import "tailwindcss";
 
 @theme {
-    --font-family-sans: "Inter", "system-ui", "Avenir", "Helvetica", "Arial", "sans-serif";
+  --font-family-sans:
+    "Inter", "system-ui", "Avenir", "Helvetica", "Arial", "sans-serif";
 }
 
 :root {
-    font-synthesis: none;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 html,
 body {
-    margin: 0;
-    padding: 0;
-    width: 500px;
-    height: 600px;
-    overflow: hidden;
-    background-color: #0f172a;
-    /* matches bg-gray-900 for a seamless look */
+  margin: 0;
+  padding: 0;
+  width: 500px;
+  height: 600px;
+  overflow: hidden;
+  background-color: #0f172a;
+  /* matches bg-gray-900 for a seamless look */
 }
 
 #app {
-    width: 100%;
-    height: 100%;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 @layer utilities {
-    .custom-scrollbar::-webkit-scrollbar {
-        width: 4px;
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 10px;
+  }
+
+  .dark .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #334155;
+  }
+
+  .fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(5px);
     }
 
-    .custom-scrollbar::-webkit-scrollbar-track {
-        background: transparent;
+    to {
+      opacity: 1;
+      transform: translateY(0);
     }
+  }
 
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: #e2e8f0;
-        border-radius: 10px;
-    }
+  select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.5rem center;
+    background-size: 1.5em 1.5em;
+  }
 
-    .dark .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: #334155;
-    }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 
-    .fade-in {
-        animation: fadeIn 0.3s ease-out;
-    }
-
-    @keyframes fadeIn {
-        from {
-            opacity: 0;
-            transform: translateY(5px);
-        }
-
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    select {
-        appearance: none;
-        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
-        background-repeat: no-repeat;
-        background-position: right 0.5rem center;
-        background-size: 1.5em 1.5em;
-    }
-
-    .hide-scrollbar::-webkit-scrollbar {
-        display: none;
-    }
-
-    .hide-scrollbar {
-        -ms-overflow-style: none;
-        scrollbar-width: none;
-    }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 }

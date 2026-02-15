@@ -382,6 +382,72 @@ export class JdReviewAdapter extends CommerceReviewAdapter {
         return reviews;
     }
 
+    private collectSkuCardsFromDom(): { title: string; url: string }[] {
+        const cards = Array.from(document.querySelectorAll('[data-sku], [data-skuid], [sku]')) as HTMLElement[];
+        const results: { title: string; url: string }[] = [];
+        const seen = new Set<string>();
+
+        const readSku = (el: HTMLElement) => {
+            const candidates = [
+                el.dataset?.sku,
+                el.dataset?.skuid,
+                el.getAttribute('data-sku'),
+                el.getAttribute('data-skuid'),
+                el.getAttribute('sku')
+            ];
+            for (const item of candidates) {
+                const value = this.cleanText(item || '');
+                if (/^\d{6,}$/.test(value)) return value;
+            }
+            return '';
+        };
+
+        const readTitle = (el: HTMLElement) => {
+            const direct = this.cleanText(el.getAttribute('title'));
+            if (direct) return this.normalizeTitle(direct);
+
+            const titleNode = el.querySelector('[title]');
+            const titleAttr = this.cleanText(titleNode?.getAttribute('title'));
+            if (titleAttr) return this.normalizeTitle(titleAttr);
+
+            const textNode = this.cleanText(el.querySelector('span, h3, h4, a')?.textContent);
+            if (textNode) return this.normalizeTitle(textNode);
+
+            const imgAlt = this.cleanText(el.querySelector('img')?.getAttribute('alt'));
+            if (imgAlt) return this.normalizeTitle(imgAlt);
+
+            return '';
+        };
+
+        for (const card of cards) {
+            const sku = readSku(card);
+            if (!sku) continue;
+
+            const normalizedUrl = this.normalizeProductUrl(`https://item.jd.com/${sku}.html`);
+            if (!normalizedUrl || seen.has(normalizedUrl)) continue;
+
+            seen.add(normalizedUrl);
+            const title = readTitle(card) || this.fallbackTitleFromUrl(normalizedUrl);
+            results.push({ title, url: normalizedUrl });
+        }
+
+        return results;
+    }
+
+    async scanLinks(): Promise<{ title: string; url: string }[]> {
+        const base = await super.scanLinks();
+        const seen = new Set(base.map((item) => item.url));
+        const skuLinks = this.collectSkuCardsFromDom();
+
+        for (const item of skuLinks) {
+            if (seen.has(item.url)) continue;
+            seen.add(item.url);
+            base.push(item);
+        }
+
+        return base;
+    }
+
     protected normalizeProductUrl(rawUrl: string): string | null {
         let url: URL;
         try {
@@ -422,4 +488,3 @@ export class JdReviewAdapter extends CommerceReviewAdapter {
         return '';
     }
 }
-
