@@ -46,7 +46,7 @@ const availableFormats = computed(() => {
   return formats
 })
 
-const itemLabel = computed(() => props.taskType === 'review' ? '评论' : '文档')
+const itemLabel = computed(() => props.taskType === 'review' ? '商品链接' : '文档')
 const listTargetLabel = computed(() => props.taskType === 'review' ? '商品链接' : '文档链接')
 const startLabel = computed(() => props.taskType === 'review' ? '开始抓取评论' : '开始抓取')
 const emptyHint = computed(() => {
@@ -330,7 +330,7 @@ const handleStartBatch = () => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="flex flex-col min-h-full">
     <div v-if="props.taskType === 'review'" class="mb-4 p-3 rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-white/70 dark:bg-slate-900/40 space-y-2.5">
       <div class="flex items-center justify-between">
         <div class="text-[11px] font-black tracking-wider text-slate-500">手动导入商品链接</div>
@@ -473,7 +473,7 @@ const handleStartBatch = () => {
     </div>
 
     <!-- Scrollable List -->
-    <div class="flex-1 overflow-y-auto custom-scrollbar pr-1 -mr-1">
+    <div class="overflow-y-auto custom-scrollbar pr-1 -mr-1 min-h-[160px] max-h-[260px]">
       <div v-if="batchStore.scannedLinks.length === 0" class="h-40 flex flex-col items-center justify-center text-gray-400 gap-2 opacity-60 italic">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
         <span class="text-xs">{{ emptyHint }}</span>
