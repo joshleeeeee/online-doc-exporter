@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { useSettingsStore } from '../store/settings'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const settings = useSettingsStore()
+
+const showAdvancedSettings = ref(localStorage.getItem('ode-settings-advanced') === 'true')
+watch(showAdvancedSettings, (value) => {
+  localStorage.setItem('ode-settings-advanced', String(value))
+})
 
 const scrollSpeedDisplay = computed(() => (settings.scrollWaitTime / 1000).toFixed(1) + 's')
 
@@ -23,12 +28,38 @@ const concurrencyOptions = [
   { value: 2, label: '2', desc: '均衡' },
   { value: 3, label: '3', desc: '更快' },
 ]
+
+const reviewRatingOptions = [
+  { value: 0, label: '全部评分' },
+  { value: 3, label: '3 分及以上' },
+  { value: 4, label: '4 分及以上' },
+  { value: 5, label: '仅 5 分' },
+]
+
+const reviewRecentDaysOptions = [
+  { value: 0, label: '不限时间' },
+  { value: 30, label: '近 30 天' },
+  { value: 90, label: '近 90 天' },
+  { value: 180, label: '近 180 天' },
+  { value: 365, label: '近 1 年' },
+]
 </script>
 
 <template>
   <div class="flex flex-col gap-6 p-1">
+    <section class="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40 p-3">
+      <button
+        @click="showAdvancedSettings = !showAdvancedSettings"
+        class="w-full flex items-center justify-between text-sm font-bold text-slate-700 dark:text-slate-200"
+      >
+        <span>高级设置（图片处理 / 评论过滤 / 并发）</span>
+        <span class="text-xs text-slate-400">{{ showAdvancedSettings ? '收起' : '展开' }}</span>
+      </button>
+      <p class="text-[11px] text-slate-400 mt-1">默认参数已可直接使用；只有需要精调时再展开。</p>
+    </section>
+
     <!-- Image Processing Mode -->
-    <section class="space-y-3">
+    <section v-if="showAdvancedSettings" class="space-y-3">
       <div class="flex flex-col">
         <h3 class="text-[15px] font-semibold flex items-center gap-2">
           <span class="text-blue-500">🖼️</span> 图片处理模式
@@ -71,7 +102,7 @@ const concurrencyOptions = [
       leave-from-class="transform scale-100 opacity-100"
       leave-to-class="transform scale-95 opacity-0"
     >
-      <section v-if="settings.imageMode === 'minio'" class="bg-gray-100 dark:bg-gray-800/50 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-gray-700">
+      <section v-if="showAdvancedSettings && settings.imageMode === 'minio'" class="bg-gray-100 dark:bg-gray-800/50 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-gray-700">
         <h4 class="text-xs font-bold text-gray-500 uppercase tracking-wider">OSS 配置细节</h4>
         
         <div class="space-y-3">
@@ -136,7 +167,67 @@ const concurrencyOptions = [
         </label>
       </div>
 
-      <div class="space-y-3 p-1">
+      <section v-if="showAdvancedSettings" class="space-y-3 p-3 bg-gray-50 dark:bg-gray-800/40 rounded-xl border border-gray-100 dark:border-gray-700">
+        <div class="flex items-center justify-between">
+          <span class="text-sm font-medium">评论抓取过滤</span>
+          <span class="text-[10px] text-gray-400">仅在京东/淘宝评论抓取生效</span>
+        </div>
+        <p class="text-[10px] text-gray-400">说明：京东这类无限滚动页面没有“页数”概念，抓取深度按滚动档位控制（1 档约等于 20 轮滚动）。</p>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[11px] font-medium text-gray-500 ml-1">最低评分</label>
+            <select v-model.number="settings.reviewMinRating" class="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg h-9 px-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+              <option v-for="option in reviewRatingOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+            </select>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[11px] font-medium text-gray-500 ml-1">时间范围</label>
+            <select v-model.number="settings.reviewRecentDays" class="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg h-9 px-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+              <option v-for="option in reviewRecentDaysOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 items-end">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[11px] font-medium text-gray-500 ml-1">最大评论数</label>
+            <input
+              v-model.number="settings.reviewMaxCount"
+              type="number"
+              min="0"
+              max="2000"
+              step="50"
+              class="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg h-9 px-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+            <p class="text-[10px] text-gray-400 px-1">填 0 表示不限制（建议 100-1000）</p>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[11px] font-medium text-gray-500 ml-1">抓取深度档位</label>
+            <input
+              v-model.number="settings.reviewMaxPages"
+              type="number"
+              min="1"
+              max="50"
+              step="1"
+              class="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg h-9 px-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+            <p class="text-[10px] text-gray-400 px-1">建议 1-5 档，档位越大越慢</p>
+          </div>
+        </div>
+
+        <label class="flex items-center justify-between gap-3 p-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 cursor-pointer">
+          <div class="flex flex-col">
+            <span class="text-xs font-medium">仅抓取有图评论</span>
+            <span class="text-[10px] text-gray-400">过滤掉纯文字评论</span>
+          </div>
+          <input type="checkbox" v-model="settings.reviewWithImagesOnly" class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+        </label>
+      </section>
+
+      <div v-if="showAdvancedSettings" class="space-y-3 p-1">
         <div class="flex items-center justify-between">
           <span class="text-sm font-medium">滚动抓取等待时间</span>
           <span class="text-xs font-mono font-bold text-blue-500 bg-blue-50 dark:bg-blue-900/40 px-2 py-0.5 rounded-md">{{ scrollSpeedDisplay }}</span>
@@ -156,7 +247,7 @@ const concurrencyOptions = [
         </div>
       </div>
 
-      <div class="space-y-3 p-1">
+      <div v-if="showAdvancedSettings" class="space-y-3 p-1">
         <div class="flex items-center justify-between">
           <span class="text-sm font-medium">批量并发数</span>
           <span class="text-xs font-mono font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-900/40 px-2 py-0.5 rounded-md">

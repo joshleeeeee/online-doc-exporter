@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useBatchStore, type BatchItem } from '../store/batch'
 import JSZip from 'jszip'
 
@@ -15,6 +15,14 @@ const ZIP_HEAP_HARD_LIMIT_MB = 420
 
 const isDownloading = ref(false)
 const downloadProgress = ref('')
+const latestPreviewLines = ref<string[]>([])
+const latestPreviewMeta = ref('')
+const latestPreviewLoading = ref(false)
+const showOverview = ref(localStorage.getItem('ode-manager-overview') === 'true')
+
+watch(showOverview, (value) => {
+  localStorage.setItem('ode-manager-overview', String(value))
+})
 
 const getHeapUsageMb = () => {
   const mem = (performance as any)?.memory
@@ -26,6 +34,21 @@ const formatSize = (bytes: number = 0) => {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+const getExportFormatMeta = (format?: string) => {
+  if (format === 'pdf') return { ext: '.pdf', mime: 'application/pdf' }
+  if (format === 'html') return { ext: '.html', mime: 'text/html;charset=utf-8' }
+  if (format === 'csv') return { ext: '.csv', mime: 'text/csv;charset=utf-8' }
+  if (format === 'json') return { ext: '.json', mime: 'application/json;charset=utf-8' }
+  return { ext: '.md', mime: 'text/markdown;charset=utf-8' }
+}
+
+const encodeExportContent = (format: string | undefined, content: string) => {
+  if (format === 'csv') {
+    return content.startsWith('\uFEFF') ? content : `\uFEFF${content}`
+  }
+  return content
 }
 
 const sanitizeDownloadName = (name?: string) => {
@@ -88,6 +111,13 @@ const volumes = computed(() => {
 })
 
 const volumeCount = computed(() => volumes.value.length)
+
+const latestSuccessItem = computed<BatchItem | null>(() => {
+  const sorted = [...batchStore.processedResults]
+    .filter(item => item.status === 'success')
+    .sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0))
+  return sorted[0] || null
+})
 
 const toggleSelectAll = (e: Event) => {
   const checked = (e.target as HTMLInputElement).checked
@@ -156,8 +186,9 @@ const handleDownloadZip = async () => {
             zip.file(`${safeTitle}.zip`, archiveBase64, { base64: true })
           }
         } else {
-          zip.file(`${safeTitle}.md`, item.content || '')
-          if (item.images && Array.isArray(item.images)) {
+          const formatMeta = getExportFormatMeta(item.format)
+          zip.file(`${safeTitle}${formatMeta.ext}`, encodeExportContent(item.format, item.content || ''))
+          if ((item.format === 'markdown' || item.format === 'html') && item.images && Array.isArray(item.images)) {
             item.images.forEach((img: any) => {
               if (img.base64 && img.filename) {
                 const base64Data = img.base64.includes(',') ? img.base64.split(',')[1] : img.base64
@@ -235,7 +266,170 @@ const isListLoading = computed(() =>
   !batchStore.hasLoadedStatus || (batchStore.isUpdatingStatus && batchStore.processedResults.length === 0 && !batchStore.currentItem)
 )
 
+const currentItemProgressText = computed(() => {
+  const current = batchStore.currentItem
+  if (!current) return ''
+  if (current.taskType !== 'review') return '正在抓取内容并预处理图片...'
+
+  const total = Number(current.progressTotal || 0)
+  const round = Number(current.progressRound || 0)
+  const added = Number(current.progressAdded || 0)
+
+  if (total > 0) {
+    const roundText = round > 0 ? `第 ${round} 轮 · ` : ''
+    const addedText = round > 0 ? ` · 本轮 +${added}` : ''
+    return `正在提取评论区... ${roundText}累计 ${total} 条${addedText}`
+  }
+
+  return current.progressMessage || '正在提取评论区...'
+})
+
+const currentItemEtaText = computed(() => {
+  const current = batchStore.currentItem
+  if (!current || current.taskType !== 'review') return ''
+
+  const round = Number(current.progressRound || 0)
+  const maxRounds = Number((current as any).progressMaxRounds || 0)
+  const startedAt = Number((current as any).progressStartedAt || 0)
+  if (round <= 0 || maxRounds <= 0 || startedAt <= 0 || round >= maxRounds) return ''
+
+  const elapsedMs = Date.now() - startedAt
+  if (elapsedMs <= 1000) return ''
+  const avgMsPerRound = elapsedMs / round
+  const etaMs = Math.max(0, avgMsPerRound * (maxRounds - round))
+
+  if (etaMs < 60_000) {
+    return `预计约 ${Math.round(etaMs / 1000)} 秒`
+  }
+  return `预计约 ${Math.ceil(etaMs / 60_000)} 分钟`
+})
+
+const parseCsvLine = (line: string) => {
+  const cells: string[] = []
+  let current = ''
+  let inQuotes = false
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+    if (char === '"') {
+      const next = line[i + 1]
+      if (inQuotes && next === '"') {
+        current += '"'
+        i += 1
+      } else {
+        inQuotes = !inQuotes
+      }
+      continue
+    }
+
+    if (char === ',' && !inQuotes) {
+      cells.push(current)
+      current = ''
+      continue
+    }
+
+    current += char
+  }
+
+  cells.push(current)
+  return cells
+}
+
+const extractPreviewFromData = (data: any) => {
+  latestPreviewLines.value = []
+  latestPreviewMeta.value = ''
+
+  if (!data?.content) return
+
+  if (data.format === 'json') {
+    try {
+      const parsed = JSON.parse(data.content)
+      const reviews = Array.isArray(parsed?.reviews) ? parsed.reviews : []
+      latestPreviewMeta.value = `质检预览：共 ${parsed?.reviewCount || reviews.length} 条`
+      latestPreviewLines.value = reviews.slice(0, 3).map((item: any, idx: number) => {
+        const user = String(item?.user || '匿名用户').trim()
+        const content = String(item?.content || '').replace(/\s+/g, ' ').trim()
+        return `${idx + 1}. ${user}：${content.slice(0, 70) || '（空）'}`
+      })
+    } catch (_) {
+      latestPreviewMeta.value = ''
+      latestPreviewLines.value = []
+    }
+    return
+  }
+
+  if (data.format === 'csv') {
+    const raw = String(data.content || '').replace(/^\uFEFF/, '')
+    const rows = raw.split(/\r?\n/).filter(Boolean)
+    if (rows.length <= 1) return
+
+    const header = parseCsvLine(rows[0])
+    const userIndex = header.indexOf('user')
+    const contentIndex = header.indexOf('content')
+    const timeIndex = header.indexOf('time')
+
+    latestPreviewMeta.value = `质检预览：共 ${rows.length - 1} 条`
+    latestPreviewLines.value = rows.slice(1, 4).map((row, idx) => {
+      const cols = parseCsvLine(row)
+      const user = cols[userIndex] || '匿名用户'
+      const time = cols[timeIndex] || ''
+      const content = (cols[contentIndex] || '').replace(/\s+/g, ' ').trim()
+      return `${idx + 1}. ${user}${time ? ` · ${time}` : ''}：${content.slice(0, 64) || '（空）'}`
+    })
+  }
+}
+
+watch(() => latestSuccessItem.value?.url, async (url) => {
+  latestPreviewLines.value = []
+  latestPreviewMeta.value = ''
+  if (!url) return
+
+  latestPreviewLoading.value = true
+  try {
+    const data = await fetchSingleResult(url)
+    if (data?.taskType === 'review' && (data?.format === 'csv' || data?.format === 'json')) {
+      extractPreviewFromData(data)
+    }
+  } finally {
+    latestPreviewLoading.value = false
+  }
+}, { immediate: true })
+
+const quickDownloadLatest = () => {
+  if (!latestSuccessItem.value) return
+  void handleSingleDownload(latestSuccessItem.value)
+}
+
+const getFailureTip = (item: BatchItem) => {
+  const error = String(item.error || '').toLowerCase()
+  if (!error) return ''
+
+  if (error.includes('could not establish connection')) {
+    return '页面连接中断，刷新商品页后点击重试。'
+  }
+
+  if (error.includes('timeout') || error.includes('超时')) {
+    return '抓取超时，建议先用“快速抓取”模板再重试。'
+  }
+
+  if (error.includes('评论区') || error.includes('容器')) {
+    return '请先手动展开“全部评价”，再点击重试。'
+  }
+
+  if (item.taskType === 'review') {
+    return '建议保持商品页前台可见，等待滚动完成后再重试。'
+  }
+
+  return '建议点击重试；若持续失败请刷新目标页面。'
+}
+
 const openUrl = (url: string) => window.open(url, '_blank')
+
+const getTaskTypeTag = (item: BatchItem) => {
+    return item.taskType === 'review'
+        ? { label: '评', className: 'text-[9px] font-black text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded uppercase border border-amber-100 dark:border-amber-800 shrink-0' }
+        : { label: '文', className: 'text-[9px] font-black text-slate-500 bg-slate-50 dark:bg-slate-700/60 px-1.5 py-0.5 rounded uppercase border border-slate-200 dark:border-slate-700 shrink-0' }
+}
 
 const handleSingleDownload = async (item: BatchItem) => {
     chrome.runtime.sendMessage({ 
@@ -278,12 +472,12 @@ const handleSingleDownload = async (item: BatchItem) => {
                 a.click()
                 URL.revokeObjectURL(dlUrl)
             } else {
-                // Markdown: existing logic
-                const hasImages = data.images && data.images.length > 0
+                const formatMeta = getExportFormatMeta(data.format)
+                const hasImages = (data.format === 'markdown' || data.format === 'html') && data.images && data.images.length > 0
                 
                 if (hasImages) {
                     const zip = new JSZip()
-                    zip.file(`${safeTitle}.md`, data.content || '')
+                    zip.file(`${safeTitle}${formatMeta.ext}`, encodeExportContent(data.format, data.content || ''))
                     
                     const imagesFolder = zip.folder("images")
                     data.images.forEach((img: any) => {
@@ -301,11 +495,11 @@ const handleSingleDownload = async (item: BatchItem) => {
                     a.click()
                     URL.revokeObjectURL(dlUrl)
                 } else {
-                    const blob = new Blob([data.content || ''], { type: 'text/markdown' })
+                    const blob = new Blob([encodeExportContent(data.format, data.content || '')], { type: formatMeta.mime })
                     const dlUrl = URL.createObjectURL(blob)
                     const a = document.createElement('a')
                     a.href = dlUrl
-                    a.download = `${safeTitle}.md`
+                    a.download = `${safeTitle}${formatMeta.ext}`
                     a.click()
                     URL.revokeObjectURL(dlUrl)
                 }
@@ -317,8 +511,15 @@ const handleSingleDownload = async (item: BatchItem) => {
 
 <template>
   <div class="flex flex-col h-full overflow-hidden">
+    <div class="mb-2 flex justify-end">
+      <button
+        @click="showOverview = !showOverview"
+        class="h-8 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-500 hover:text-blue-600 hover:border-blue-300 transition-colors"
+      >{{ showOverview ? '收起概览' : '展开概览' }}</button>
+    </div>
+
     <!-- Summary Header -->
-    <div class="grid grid-cols-2 gap-3 mb-4">
+    <div v-if="showOverview" class="grid grid-cols-2 gap-3 mb-4">
       <div class="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
         <div class="text-xs uppercase tracking-wider font-bold text-gray-400 mb-1">完成总量</div>
         <div class="text-xl font-black text-blue-600">{{ batchStore.processedResults.filter(r => r.status === 'success').length }}</div>
@@ -326,6 +527,25 @@ const handleSingleDownload = async (item: BatchItem) => {
       <div class="p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm">
         <div class="text-xs uppercase tracking-wider font-bold text-gray-400 mb-1">已选大小</div>
         <div class="text-xl font-black text-gray-700 dark:text-gray-200">{{ formatSize(totalSelectedSize) }}</div>
+      </div>
+    </div>
+
+    <div v-if="showOverview && latestSuccessItem" class="mb-4 p-3 rounded-2xl border border-emerald-100 dark:border-emerald-900/40 bg-emerald-50/70 dark:bg-emerald-900/10 space-y-2">
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <div class="text-[11px] font-black tracking-wider uppercase text-emerald-600">最近完成</div>
+          <div class="text-sm font-bold text-emerald-900 dark:text-emerald-200 truncate">{{ latestSuccessItem.title }}</div>
+        </div>
+        <button
+          @click="quickDownloadLatest"
+          class="h-9 px-4 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 shadow shrink-0"
+        >立即下载</button>
+      </div>
+
+      <div v-if="latestPreviewLoading" class="text-[11px] text-emerald-700/80">正在生成质量预览...</div>
+      <div v-else-if="latestPreviewLines.length > 0" class="space-y-1">
+        <div class="text-[11px] font-bold text-emerald-700">{{ latestPreviewMeta }}</div>
+        <div v-for="line in latestPreviewLines" :key="line" class="text-[11px] text-emerald-800/90 dark:text-emerald-200/90 truncate">{{ line }}</div>
       </div>
     </div>
 
@@ -402,10 +622,12 @@ const handleSingleDownload = async (item: BatchItem) => {
            <div class="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin shrink-0"></div>
            <div class="flex-1 min-w-0">
              <div class="text-xs font-bold text-blue-700 dark:text-blue-400 truncate">{{ batchStore.currentItem.title }}</div>
-             <div class="text-[9px] text-blue-500 mt-0.5">
-               正在抓取内容并预处理图片...
-               <template v-if="batchStore.activeCount > 1">（另有 {{ batchStore.activeCount - 1 }} 个并发任务）</template>
-             </div>
+               <div class="text-[9px] text-blue-500 mt-0.5">
+                 {{ currentItemProgressText }}
+                 <template v-if="batchStore.activeCount > 1">（另有 {{ batchStore.activeCount - 1 }} 个并发任务）</template>
+               </div>
+               <div v-if="currentItemEtaText" class="text-[9px] text-blue-400 mt-0.5">{{ currentItemEtaText }}</div>
+               <div v-if="batchStore.currentItem.strategyHint" class="text-[9px] text-indigo-500 mt-0.5">策略：{{ batchStore.currentItem.strategyHint }}</div>
            </div>
         </div>
 
@@ -429,14 +651,18 @@ const handleSingleDownload = async (item: BatchItem) => {
 
           <div class="flex-1 min-w-0">
              <div class="flex items-center gap-1.5 mb-0.5">
-                <span :class="[item.status === 'success' ? 'text-gray-700 dark:text-gray-200' : 'text-gray-400']" class="text-xs font-bold truncate flex-1 uppercase tracking-tight">{{ item.title }}</span>
-                <span v-if="item.format === 'pdf'" class="text-[9px] font-black text-red-500 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded uppercase border border-red-100 dark:border-red-800 shrink-0">PDF</span>
-                <span v-else-if="item.format === 'markdown'" class="text-[9px] font-black text-blue-500 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded uppercase border border-blue-100 dark:border-blue-800 shrink-0">MD</span>
-                <span v-if="item.size" class="text-xs font-mono text-gray-400 shrink-0">{{ formatSize(item.size) }}</span>
-             </div>
+                 <span :class="[item.status === 'success' ? 'text-gray-700 dark:text-gray-200' : 'text-gray-400']" class="text-xs font-bold truncate flex-1 uppercase tracking-tight">{{ item.title }}</span>
+                 <span :class="getTaskTypeTag(item).className">{{ getTaskTypeTag(item).label }}</span>
+                 <span v-if="item.format === 'pdf'" class="text-[9px] font-black text-red-500 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded uppercase border border-red-100 dark:border-red-800 shrink-0">PDF</span>
+                 <span v-else-if="item.format === 'csv'" class="text-[9px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded uppercase border border-emerald-100 dark:border-emerald-800 shrink-0">CSV</span>
+                 <span v-else-if="item.format === 'json'" class="text-[9px] font-black text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded uppercase border border-amber-100 dark:border-amber-800 shrink-0">JSON</span>
+                 <span v-else-if="item.format === 'markdown'" class="text-[9px] font-black text-blue-500 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded uppercase border border-blue-100 dark:border-blue-800 shrink-0">MD</span>
+                 <span v-if="item.size" class="text-xs font-mono text-gray-400 shrink-0">{{ formatSize(item.size) }}</span>
+              </div>
              <div class="text-[11px] text-gray-400 truncate opacity-60">{{ item.url }}</div>
              <div v-if="item.status === 'failed' && item.error" class="text-[10px] text-red-400 mt-0.5 truncate" :title="item.error">❌ {{ item.error }}</div>
-          </div>
+             <div v-if="item.status === 'failed'" class="text-[10px] text-amber-500 mt-0.5 truncate">建议：{{ getFailureTip(item) }}</div>
+           </div>
 
           <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <button v-if="item.status === 'success'" @click="handleSingleDownload(item)" class="p-1.5 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg text-gray-400 hover:text-blue-600" title="常规下载">

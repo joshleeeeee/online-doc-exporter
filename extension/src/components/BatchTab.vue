@@ -1,7 +1,18 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useBatchStore, type BatchItem } from '../store/batch'
 import { useSettingsStore } from '../store/settings'
+import type { TaskType } from '../platformRegistry'
+
+const props = withDefaults(defineProps<{
+  taskType?: TaskType
+  supportsScrollScan?: boolean
+  supportsPdf?: boolean
+}>(), {
+  taskType: 'doc',
+  supportsScrollScan: true,
+  supportsPdf: true
+})
 
 const batchStore = useBatchStore()
 const settingsStore = useSettingsStore()
@@ -9,25 +20,190 @@ const settingsStore = useSettingsStore()
 const isScanning = ref(false)
 const isScrollScanning = ref(false)
 const selectedIndexes = ref<Set<number>>(new Set())
-const batchFormat = ref<'markdown' | 'pdf'>('markdown')
+type BatchExportFormat = 'markdown' | 'pdf' | 'csv' | 'json'
+const batchFormat = ref<BatchExportFormat>(props.taskType === 'review' ? 'csv' : 'markdown')
 const showTips = ref({
   sidebar: localStorage.getItem('dismissed-tip-sidebar') !== 'true',
 })
+const manualLinksInput = ref('')
+const manualImportMessage = ref('')
+const manualImportError = ref('')
+
+const availableFormats = computed(() => {
+  const formats: Array<{ value: BatchExportFormat; label: string }> = [
+    { value: 'markdown', label: 'Markdown' }
+  ]
+
+  if (props.taskType === 'review') {
+    formats.push({ value: 'csv', label: 'CSV' })
+    formats.push({ value: 'json', label: 'JSON' })
+  }
+
+  if (props.supportsPdf) {
+    formats.push({ value: 'pdf', label: 'PDF' })
+  }
+
+  return formats
+})
+
+const itemLabel = computed(() => props.taskType === 'review' ? '评论' : '文档')
+const listTargetLabel = computed(() => props.taskType === 'review' ? '商品链接' : '文档链接')
+const startLabel = computed(() => props.taskType === 'review' ? '开始抓取评论' : '开始抓取')
+const emptyHint = computed(() => {
+  if (props.taskType === 'review') {
+    return props.supportsScrollScan
+      ? '可粘贴商品链接手动导入，或点击「扫描页面/滚动扫描」自动发现'
+      : '可粘贴商品链接手动导入，或点击「扫描页面」自动发现'
+  }
+  return props.supportsScrollScan
+    ? '点击「扫描页面」快速扫描，或「滚动扫描」自动边滚动边发现'
+    : '点击「扫描页面」快速扫描'
+})
+const shouldShowSidebarTip = computed(() => props.taskType === 'doc' && showTips.value.sidebar)
+
+watch(() => props.taskType, () => {
+  selectedIndexes.value.clear()
+  batchStore.scannedLinks = []
+  isScrollScanning.value = false
+  batchFormat.value = props.taskType === 'review' ? 'csv' : 'markdown'
+  manualLinksInput.value = ''
+  manualImportMessage.value = ''
+  manualImportError.value = ''
+})
+
+watch(() => props.supportsScrollScan, (enabled) => {
+  if (!enabled) {
+    isScrollScanning.value = false
+  }
+})
+
+watch(availableFormats, (formats) => {
+  if (!formats.some(item => item.value === batchFormat.value)) {
+    batchFormat.value = formats[0]?.value || 'markdown'
+  }
+}, { immediate: true })
 
 const dismissTip = (type: 'sidebar') => {
   showTips.value[type] = false
   localStorage.setItem(`dismissed-tip-${type}`, 'true')
 }
 
+const toCandidateUrl = (raw: string): string | null => {
+  let token = raw.trim().replace(/[，,；;。\)\]\}>]+$/g, '')
+  if (!token) return null
+
+  if (!/^https?:\/\//i.test(token)) {
+    if (/^(item\.jd\.com|item\.m\.jd\.com|item-yiyao\.jd\.com|item\.jd\.hk|item\.taobao\.com|detail\.tmall\.com|chaoshi\.detail\.tmall\.com)\//i.test(token)) {
+      token = `https://${token}`
+    } else {
+      return null
+    }
+  }
+
+  try {
+    const parsed = new URL(token)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null
+    }
+    return parsed.href.split('#')[0]
+  } catch (_) {
+    return null
+  }
+}
+
+const inferManualTitle = (url: string) => {
+  try {
+    const parsed = new URL(url)
+    const host = parsed.hostname.toLowerCase()
+    if (host.includes('jd.com') || host.includes('jd.hk')) {
+      const id = (parsed.pathname.match(/(?:\/product\/)?(\d+)\.html/i)?.[1]
+        || parsed.searchParams.get('sku')
+        || parsed.searchParams.get('skuId')
+        || parsed.searchParams.get('id')
+        || '').trim()
+      return id ? `京东商品_${id}` : '京东商品'
+    }
+    if (host.includes('taobao.com') || host.includes('tmall.com')) {
+      const id = (parsed.searchParams.get('id') || '').trim()
+      return id ? `淘宝商品_${id}` : '淘宝商品'
+    }
+    return parsed.hostname
+  } catch (_) {
+    return '商品链接'
+  }
+}
+
+const importManualLinks = () => {
+  const source = manualLinksInput.value.trim()
+  if (!source) {
+    manualImportError.value = '请先粘贴商品链接'
+    manualImportMessage.value = ''
+    return
+  }
+
+  const rawTokens = source.split(/[\s\n\t]+/g).map(item => item.trim()).filter(Boolean)
+  const uniqueUrls = new Set<string>()
+  let invalidCount = 0
+  let duplicateInInput = 0
+
+  for (const token of rawTokens) {
+    const url = toCandidateUrl(token)
+    if (!url) {
+      invalidCount += 1
+      continue
+    }
+
+    if (uniqueUrls.has(url)) {
+      duplicateInInput += 1
+      continue
+    }
+
+    uniqueUrls.add(url)
+  }
+
+  const candidates = Array.from(uniqueUrls).map((url) => ({
+    url,
+    title: inferManualTitle(url)
+  }))
+
+  const beforeCount = batchStore.scannedLinks.length
+  addLinksIncrementally(candidates)
+  const addedCount = Math.max(0, batchStore.scannedLinks.length - beforeCount)
+  const existedCount = Math.max(0, candidates.length - addedCount)
+
+  if (addedCount > 0) {
+    manualImportError.value = ''
+  }
+
+  manualImportMessage.value = `导入 ${addedCount} 条，已存在 ${existedCount} 条${duplicateInInput > 0 ? `，输入重复 ${duplicateInInput} 条` : ''}${invalidCount > 0 ? `，无效 ${invalidCount} 条` : ''}`
+  if (addedCount === 0 && invalidCount > 0) {
+    manualImportError.value = '未识别到有效商品链接，请检查粘贴内容'
+  }
+}
+
+const clearManualLinks = () => {
+  manualLinksInput.value = ''
+  manualImportMessage.value = ''
+  manualImportError.value = ''
+}
+
 // Helper to add links incrementally and auto-select new non-downloaded ones
 const addLinksIncrementally = (newLinks: { title: string; url: string }[]) => {
   const existingUrls = new Set(batchStore.scannedLinks.map(l => l.url))
-  const downloadedUrls = new Set(batchStore.processedResults.map(r => r.url))
+  const downloadedUrls = new Set(
+    batchStore.processedResults
+      .filter(r => (r.taskType || 'doc') === props.taskType)
+      .map(r => r.url)
+  )
 
-  newLinks.forEach((link: BatchItem) => {
+  newLinks.forEach((link) => {
     if (!existingUrls.has(link.url)) {
-      batchStore.scannedLinks.push(link)
-      existingUrls.add(link.url)
+      const item: BatchItem = {
+        ...link,
+        taskType: props.taskType
+      }
+      batchStore.scannedLinks.push(item)
+      existingUrls.add(item.url)
     }
   })
 
@@ -57,6 +233,8 @@ const scanLinks = async () => {
 }
 
 const scrollScanLinks = async () => {
+  if (!props.supportsScrollScan) return
+
   if (isScrollScanning.value) {
     // Stop the current scroll scan
     try {
@@ -113,37 +291,75 @@ const isAllSelected = computed(() => {
 })
 
 const isDownloaded = (url: string) => {
-  return batchStore.processedResults.some(r => r.url === url && r.status === 'success')
+  return batchStore.processedResults.some(r =>
+    r.url === url &&
+    r.status === 'success' &&
+    (r.taskType || 'doc') === props.taskType
+  )
 }
 
 const handleStartBatch = () => {
-  const items = Array.from(selectedIndexes.value).map(idx => batchStore.scannedLinks[idx])
+  const items = Array.from(selectedIndexes.value)
+    .map(idx => batchStore.scannedLinks[idx])
+    .filter((item): item is BatchItem => !!item)
+    .map(item => ({
+      ...item,
+      taskType: props.taskType
+    }))
   if (items.length === 0) return
 
+  const resolvedConcurrency = props.taskType === 'review' ? 1 : settingsStore.batchConcurrency
+
   batchStore.startBatch(items, batchFormat.value, {
+    taskType: props.taskType,
     imageMode: settingsStore.imageMode,
     foreground: settingsStore.foreground,
-    batchConcurrency: settingsStore.batchConcurrency,
+    batchConcurrency: resolvedConcurrency,
     scrollWaitTime: settingsStore.scrollWaitTime,
+    reviewMinRating: settingsStore.reviewMinRating,
+    reviewWithImagesOnly: settingsStore.reviewWithImagesOnly,
+    reviewMaxCount: settingsStore.reviewMaxCount,
+    reviewRecentDays: settingsStore.reviewRecentDays,
+    reviewMaxPages: settingsStore.reviewMaxPages,
     imageConfig: {
       enabled: settingsStore.imageMode === 'minio',
       ...settingsStore.ossConfig
     }
   })
 }
-
-let pollTimer: number | null = null
-onMounted(() => {
-  batchStore.updateStatus()
-  pollTimer = window.setInterval(() => batchStore.updateStatus(), 2000)
-})
-onUnmounted(() => {
-  if (pollTimer) clearInterval(pollTimer)
-})
 </script>
 
 <template>
   <div class="flex flex-col h-full">
+    <div v-if="props.taskType === 'review'" class="mb-4 p-3 rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-white/70 dark:bg-slate-900/40 space-y-2.5">
+      <div class="flex items-center justify-between">
+        <div class="text-[11px] font-black tracking-wider text-slate-500">手动导入商品链接</div>
+        <span class="text-[10px] text-slate-400">支持换行/空格分隔</span>
+      </div>
+
+      <textarea
+        v-model="manualLinksInput"
+        rows="4"
+        placeholder="粘贴多个商品链接，例如：&#10;https://item.jd.com/100287911980.html&#10;https://item.jd.com/100283906796.html"
+        class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs leading-relaxed text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+      ></textarea>
+
+      <div class="flex gap-2">
+        <button
+          @click="importManualLinks"
+          class="flex-1 h-9 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors"
+        >导入链接并自动勾选</button>
+        <button
+          @click="clearManualLinks"
+          class="h-9 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors"
+        >清空</button>
+      </div>
+
+      <div class="text-[10px] text-slate-400">评论批量任务会按顺序逐一执行（并发固定为 1）。</div>
+      <div v-if="manualImportMessage" class="text-[11px] text-emerald-600 dark:text-emerald-400">{{ manualImportMessage }}</div>
+      <div v-if="manualImportError" class="text-[11px] text-red-500">{{ manualImportError }}</div>
+    </div>
+
     <!-- Scan Buttons -->
     <div class="flex flex-col gap-3 mb-4">
       <div class="flex gap-2">
@@ -164,6 +380,7 @@ onUnmounted(() => {
 
         <button 
           @click="scrollScanLinks"
+          v-if="props.supportsScrollScan"
           :disabled="isScanning || batchStore.isProcessing"
           :class="[
             'flex-1 flex items-center justify-center gap-2 h-10 rounded-xl font-bold text-sm transition-all shadow-md',
@@ -188,23 +405,16 @@ onUnmounted(() => {
         <span class="text-xs font-bold text-gray-500">导出格式</span>
         <div class="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
           <button
-            @click="batchFormat = 'markdown'"
+            v-for="format in availableFormats"
+            :key="format.value"
+            @click="batchFormat = format.value"
             :class="[
               'px-3 py-1 text-xs font-bold rounded-md transition-all',
-              batchFormat === 'markdown'
+              batchFormat === format.value
                 ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-sm'
                 : 'text-gray-400 hover:text-gray-600'
             ]"
-          >Markdown</button>
-          <button
-            @click="batchFormat = 'pdf'"
-            :class="[
-              'px-3 py-1 text-xs font-bold rounded-md transition-all',
-              batchFormat === 'pdf'
-                ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-sm'
-                : 'text-gray-400 hover:text-gray-600'
-            ]"
-          >PDF</button>
+          >{{ format.label }}</button>
         </div>
       </div>
 
@@ -228,7 +438,7 @@ onUnmounted(() => {
             <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/>
             <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>
           </svg>
-          <span class="start-label">开始抓取</span>
+          <span class="start-label">{{ startLabel }}</span>
           <span v-if="selectedIndexes.size > 0" class="bg-white/35 text-white text-xs font-black px-2 py-0.5 rounded-full border border-white/35">{{ selectedIndexes.size }}</span>
         </div>
       </button>
@@ -236,7 +446,7 @@ onUnmounted(() => {
 
     <!-- Tips -->
     <div class="space-y-2 mb-4">
-      <div v-if="showTips.sidebar" class="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 rounded-xl flex gap-3 relative group">
+      <div v-if="shouldShowSidebarTip" class="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 rounded-xl flex gap-3 relative group">
         <span class="text-amber-500 mt-0.5 text-base">⚠️</span>
         <p class="text-xs text-amber-700 dark:text-amber-400 leading-relaxed pr-4">注意：暂不支持抓取左侧栏链接，建议进入文档列表后再扫描。</p>
         <button @click="dismissTip('sidebar')" class="absolute top-2 right-2 text-amber-300 hover:text-amber-500 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -247,7 +457,7 @@ onUnmounted(() => {
       <!-- Scroll scan status indicator -->
       <div v-if="isScrollScanning" class="p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-900/30 rounded-xl flex gap-3 items-center">
         <div class="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin shrink-0"></div>
-        <p class="text-xs text-indigo-700 dark:text-indigo-400 leading-relaxed font-medium">正在自动滚动页面并扫描文档链接...已发现 <strong>{{ batchStore.scannedLinks.length }}</strong> 个文档</p>
+        <p class="text-xs text-indigo-700 dark:text-indigo-400 leading-relaxed font-medium">正在自动滚动页面并扫描{{ listTargetLabel }}...已发现 <strong>{{ batchStore.scannedLinks.length }}</strong> 个{{ itemLabel }}</p>
       </div>
     </div>
 
@@ -258,7 +468,7 @@ onUnmounted(() => {
         <span class="text-xs font-bold text-gray-500 group-hover:text-gray-700">全选</span>
       </label>
       <span class="text-xs bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full text-gray-500 font-bold">
-        找到 {{ batchStore.scannedLinks.length }} 个文档
+        找到 {{ batchStore.scannedLinks.length }} 个{{ itemLabel }}
       </span>
     </div>
 
@@ -266,7 +476,7 @@ onUnmounted(() => {
     <div class="flex-1 overflow-y-auto custom-scrollbar pr-1 -mr-1">
       <div v-if="batchStore.scannedLinks.length === 0" class="h-40 flex flex-col items-center justify-center text-gray-400 gap-2 opacity-60 italic">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-        <span class="text-xs">点击「扫描页面」快速扫描，或「滚动扫描」自动边滚动边发现</span>
+        <span class="text-xs">{{ emptyHint }}</span>
       </div>
 
       <div class="space-y-2">

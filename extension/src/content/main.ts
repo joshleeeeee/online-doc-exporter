@@ -375,17 +375,37 @@ class App {
         URL.revokeObjectURL(dlUrl);
     }
 
-    static async handleLocalDownload(format: 'markdown' | 'html', options: any) {
+    static getExportFormatMeta(format: string) {
+        if (format === 'html') {
+            return { ext: '.html', mime: 'text/html;charset=utf-8' };
+        }
+        if (format === 'csv') {
+            return { ext: '.csv', mime: 'text/csv;charset=utf-8' };
+        }
+        if (format === 'json') {
+            return { ext: '.json', mime: 'application/json;charset=utf-8' };
+        }
+        return { ext: '.md', mime: 'text/markdown;charset=utf-8' };
+    }
+
+    static encodeExportContent(format: string, content: string) {
+        if (format === 'csv') {
+            return content.startsWith('\uFEFF') ? content : `\uFEFF${content}`;
+        }
+        return content;
+    }
+
+    static async handleLocalDownload(format: 'markdown' | 'html' | 'csv' | 'json', options: any) {
         const result = await App.handleExtraction(format, options) as { content?: string; images?: any[] };
-        const content = result?.content || '';
+        const content = App.encodeExportContent(format, result?.content || '');
         const images = Array.isArray(result?.images) ? result.images : [];
         const rawTitle = App.normalizeExportTitle(options?.batchItemTitle || document.title || 'document') || options?.batchItemTitle || document.title || 'document';
         const safeTitle = App.sanitizeFilename(rawTitle);
+        const formatMeta = App.getExportFormatMeta(format);
 
         if (images.length > 0) {
             const zip = new JSZip();
-            const ext = format === 'html' ? '.html' : '.md';
-            const contentFilename = `${safeTitle}${ext}`;
+            const contentFilename = `${safeTitle}${formatMeta.ext}`;
             const imgFolder = zip.folder('images');
 
             images.forEach((img: any) => {
@@ -401,24 +421,22 @@ class App {
             return { hasImages: true, imageCount: images.length };
         }
 
-        const ext = format === 'html' ? '.html' : '.md';
-        const mime = format === 'html' ? 'text/html;charset=utf-8' : 'text/markdown;charset=utf-8';
-        const blob = new Blob([content], { type: mime });
-        App.triggerFileDownload(blob, `${safeTitle}${ext}`);
+        const blob = new Blob([content], { type: formatMeta.mime });
+        App.triggerFileDownload(blob, `${safeTitle}${formatMeta.ext}`);
         return { hasImages: false, imageCount: 0 };
     }
 
-    static async handleLocalArchive(format: 'markdown' | 'html', options: any) {
+    static async handleLocalArchive(format: 'markdown' | 'html' | 'csv' | 'json', options: any) {
         console.log('[LocalArchive] Start archive extraction');
         const result = await App.handleExtraction(format, options) as { content?: string; images?: any[] };
-        const content = result?.content || '';
+        const content = App.encodeExportContent(format, result?.content || '');
         const images = Array.isArray(result?.images) ? result.images : [];
         const rawTitle = App.normalizeExportTitle(options?.batchItemTitle || document.title || 'document') || options?.batchItemTitle || document.title || 'document';
         const safeTitle = App.sanitizeFilename(rawTitle);
+        const formatMeta = App.getExportFormatMeta(format);
 
         const zip = new JSZip();
-        const ext = format === 'html' ? '.html' : '.md';
-        const contentFilename = `${safeTitle}${ext}`;
+        const contentFilename = `${safeTitle}${formatMeta.ext}`;
         const imgFolder = zip.folder('images');
 
         images.forEach((img: any) => {

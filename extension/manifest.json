@@ -13,7 +13,11 @@
     "downloads"
   ],
   "host_permissions": [
-    "http://localhost/*"
+    "http://localhost/*",
+    "*://*.jd.com/*",
+    "*://*.jd.hk/*",
+    "*://*.taobao.com/*",
+    "*://*.tmall.com/*"
   ],
   "background": {
     "service_worker": "src/background/index.ts",
@@ -24,7 +28,11 @@
       "matches": [
         "*://*.feishu.cn/*",
         "*://*.larksuite.com/*",
-        "*://*.zhipin.com/*"
+        "*://*.zhipin.com/*",
+        "*://*.jd.com/*",
+        "*://*.jd.hk/*",
+        "*://*.taobao.com/*",
+        "*://*.tmall.com/*"
       ],
       "js": [
         "src/content/main.ts"

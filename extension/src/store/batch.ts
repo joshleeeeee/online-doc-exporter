@@ -1,17 +1,27 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import type { TaskType } from '../platformRegistry'
 
 export interface BatchItem {
     url: string
     title: string
+    taskType?: TaskType
     format?: string
     options?: any
     status?: 'pending' | 'processing' | 'success' | 'failed'
     size?: number
+    timestamp?: number
     error?: string
     archiveBase64?: string
     archiveName?: string
     archiveStorageKey?: string
+    progressMessage?: string
+    progressTotal?: number
+    progressRound?: number
+    progressAdded?: number
+    progressMaxRounds?: number
+    progressStartedAt?: number
+    strategyHint?: string
 }
 
 export const useBatchStore = defineStore('batch', () => {

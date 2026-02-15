@@ -1,241 +1,260 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import SettingsPanel from '../components/SettingsPanel.vue'
 import BatchTab from '../components/BatchTab.vue'
 import ManagerTab from '../components/ManagerTab.vue'
 import { useSettingsStore } from '../store/settings'
 import { useBatchStore } from '../store/batch'
+import { useToast } from '../composables/useToast'
+import { useSupportDetection } from '../composables/useSupportDetection'
+import { useExtractor } from '../composables/useExtractor'
+import { useBatchStatusPolling } from '../composables/useBatchStatusPolling'
+import type { ExportFormat, TaskType } from '../platformRegistry'
 
 const version = ref('1.4.0')
 const activeTab = ref('main')
 const settings = useSettingsStore()
 const batchStore = useBatchStore()
 
-// --- Support State ---
-const isSupported = ref(false)
-const supportMessage = ref('正在检测网页支持情况...')
-const isDetecting = ref(true)
+const { toastMsg, showToast, triggerToast, dismissToast } = useToast()
+const { isSupported, supportMessage, isDetecting, activePlatform, activePageContext, activeUrl, checkSupport } = useSupportDetection()
 
-// --- Extraction State ---
-const isExtracting = ref(false)
-const extractingFormat = ref('') // 'markdown' or 'html'
-
-// --- Toast State ---
-const toastMsg = ref('')
-const showToast = ref(false)
-
-const triggerToast = (msg: string) => {
-  toastMsg.value = msg
-  showToast.value = true
-  setTimeout(() => {
-    showToast.value = false
-  }, 2000)
+const defaultSingleFormatsByTask = (taskType: TaskType): ExportFormat[] => {
+  if (taskType === 'review') return ['markdown', 'html', 'pdf', 'csv', 'json']
+  return ['markdown', 'html', 'pdf']
 }
 
-const sendExtractMessage = async (tabId: number, payload: any, timeoutMs: number) => {
-  return await new Promise<any>((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error(`抓取超时（${Math.round(timeoutMs / 1000)}秒）`)), timeoutMs)
-    chrome.tabs.sendMessage(tabId, payload)
-      .then((res) => {
-        window.clearTimeout(timer)
-        resolve(res)
-      })
-      .catch((err) => {
-        window.clearTimeout(timer)
-        reject(err)
-      })
-  })
+const currentTaskType = computed<TaskType>(() => activePageContext.value?.platform.capabilities.taskType || activePlatform.value?.capabilities.taskType || 'doc')
+const singleFormats = computed<ExportFormat[]>(() => activePageContext.value?.ui.singleFormats || defaultSingleFormatsByTask(currentTaskType.value))
+const hasSingleFormat = (format: ExportFormat) => singleFormats.value.includes(format)
+
+const isReviewTask = computed(() => currentTaskType.value === 'review')
+const showBatchShortcut = computed(() => activePageContext.value?.ui.showBatchShortcut ?? true)
+const showBatchTab = computed(() => {
+  const pageAllows = activePageContext.value?.ui.showBatchTab ?? true
+  if (pageAllows) return true
+  return batchStore.isProcessing || batchStore.isPaused || batchStore.queueLength > 0
+})
+
+const currentEntityLabel = computed(() => currentTaskType.value === 'review' ? '评论' : '文档')
+const formatActionLabelMap = computed<Record<ExportFormat, string>>(() => ({
+  markdown: currentTaskType.value === 'review' ? '提取评论区为 Markdown' : '复制 Markdown',
+  html: currentTaskType.value === 'review' ? '提取评论区为富文本' : '复制为富文本',
+  pdf: currentTaskType.value === 'review' ? '下载评论区为 PDF' : '下载为 PDF',
+  csv: currentTaskType.value === 'review' ? '提取评论区为 CSV' : '复制 CSV',
+  json: currentTaskType.value === 'review' ? '提取评论区为 JSON' : '复制 JSON'
+}))
+
+const primaryFormat = computed<ExportFormat>(() => {
+  if (isReviewTask.value) {
+    if (hasSingleFormat('csv')) return 'csv'
+    if (hasSingleFormat('json')) return 'json'
+  }
+  if (hasSingleFormat('markdown')) return 'markdown'
+  if (hasSingleFormat('html')) return 'html'
+  if (hasSingleFormat('pdf')) return 'pdf'
+  if (hasSingleFormat('csv')) return 'csv'
+  if (hasSingleFormat('json')) return 'json'
+  return singleFormats.value[0] || 'markdown'
+})
+
+const secondaryFormats = computed<ExportFormat[]>(() => singleFormats.value.filter((f) => f !== primaryFormat.value))
+const showSecondaryActions = ref(false)
+const primaryActionLabel = computed(() => `一键${formatActionLabelMap.value[primaryFormat.value] || '导出'}`)
+
+const isAnyActionBusy = computed(() => isExtracting.value || isQueueingReview.value)
+const isFormatBusy = (format: ExportFormat) => {
+  if (format === 'pdf') return isExtracting.value && extractingFormat.value === 'pdf'
+  if (format === 'csv' || format === 'json') {
+    return (isExtracting.value && extractingFormat.value === format) || (isQueueingReview.value && queueingReviewFormat.value === format)
+  }
+  return isExtracting.value && extractingFormat.value === format
 }
 
-const checkSupport = async () => {
-  isDetecting.value = true
-  chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-    if (!tab || !tab.url) {
-      isSupported.value = false
-      supportMessage.value = '无法获取网页信息'
-      isDetecting.value = false
-      return
-    }
+const runAction = (format: ExportFormat) => {
+  if (format === 'pdf') {
+    void executePDF()
+    return
+  }
 
-    const url = tab.url.toLowerCase()
-    const isFeishu = url.includes('feishu.cn') || url.includes('larksuite.com')
-    const isBoss = url.includes('zhipin.com')
+  if (isReviewTask.value && (format === 'csv' || format === 'json')) {
+    void queueReviewExtraction(format)
+    return
+  }
 
-    if (isFeishu) {
-      isSupported.value = true
-      supportMessage.value = '支持导出：飞书/Lark 文档'
-    } else if (isBoss) {
-      isSupported.value = true
-      supportMessage.value = '支持导出：BOSS 直聘职位'
-    } else {
-      isSupported.value = false
-      supportMessage.value = '当前网页不受支持'
-    }
-    isDetecting.value = false
-  })
-}
-
-const copyToClipboard = async (text: string, html: string | null = null) => {
-  try {
-    if (html) {
-      const blobHtml = new Blob([html], { type: 'text/html' })
-      const blobText = new Blob([text], { type: 'text/plain' })
-      await navigator.clipboard.write([
-        new ClipboardItem({
-          'text/html': blobHtml,
-          'text/plain': blobText
-        })
-      ])
-    } else {
-      await navigator.clipboard.writeText(text)
-    }
-    return true
-  } catch (err) {
-    console.error('Clipboard write failed', err)
-    return false
+  if (format === 'markdown' || format === 'html' || format === 'csv' || format === 'json') {
+    void executeCopy(format)
   }
 }
 
-const executeCopy = async (format: 'markdown' | 'html') => {
-  if (isExtracting.value) return
-  
-  isExtracting.value = true
-  extractingFormat.value = format
+const strategyHints = computed(() => {
+  const hints: string[] = []
+  const url = (activeUrl.value || '').toLowerCase()
 
-  const { imageMode, scrollWaitTime, ossConfig } = settings
-  const imageConfig = {
-    enabled: (imageMode === 'minio'),
-    ...ossConfig
+  if (isReviewTask.value && (url.includes('jd.com') || url.includes('jd.hk'))) {
+    hints.push('已启用京东前台策略：自动展开“全部评价”并在评论容器内滚动增量抓取。')
   }
+
+  if (isReviewTask.value) {
+    hints.push('提取结果会进入下载中心，关闭弹窗后任务仍会继续。')
+  }
+
+  return hints
+})
+
+interface ReviewPreset {
+  id: string
+  label: string
+  desc: string
+  maxCount: number
+  maxPages: number
+}
+
+const reviewPresets: ReviewPreset[] = [
+  { id: 'quick', label: '快速抓取', desc: '100 条 / 浅层滚动', maxCount: 100, maxPages: 2 },
+  { id: 'standard', label: '标准抓取', desc: '300 条 / 中层滚动', maxCount: 300, maxPages: 5 },
+  { id: 'deep', label: '深度抓取', desc: '1000 条 / 深层滚动', maxCount: 1000, maxPages: 12 }
+]
+
+const activeReviewPresetId = computed(() => {
+  const matched = reviewPresets.find((preset) =>
+    settings.reviewMaxCount === preset.maxCount &&
+    settings.reviewMaxPages === preset.maxPages &&
+    settings.reviewMinRating === 0 &&
+    settings.reviewWithImagesOnly === false &&
+    settings.reviewRecentDays === 0
+  )
+  return matched?.id || ''
+})
+
+const applyReviewPreset = (preset: ReviewPreset) => {
+  settings.reviewMinRating = 0
+  settings.reviewWithImagesOnly = false
+  settings.reviewRecentDays = 0
+  settings.reviewMaxCount = preset.maxCount
+  settings.reviewMaxPages = preset.maxPages
+  triggerToast(`已切换到${preset.label}（${preset.desc}）`)
+}
+
+const onboardingStorageKey = 'ode-onboarding-seen-v1'
+const showOnboarding = ref(false)
+const onboardingStep = ref(0)
+const onboardingSteps = [
+  '在首页点击主按钮开始提取（通常一键即可）。',
+  '切到“下载”页查看实时进度和累计条数。',
+  '任务完成后点击下载按钮保存结果。'
+]
+
+const finishOnboarding = () => {
+  showOnboarding.value = false
+  localStorage.setItem(onboardingStorageKey, 'true')
+}
+
+const nextOnboardingStep = () => {
+  if (onboardingStep.value >= onboardingSteps.length - 1) {
+    finishOnboarding()
+    return
+  }
+  onboardingStep.value += 1
+}
+
+const prevOnboardingStep = () => {
+  onboardingStep.value = Math.max(0, onboardingStep.value - 1)
+}
+
+const maybeStartOnboarding = () => {
+  const hasSeen = localStorage.getItem(onboardingStorageKey) === 'true'
+  if (hasSeen) return
+  if (!isSupported.value) return
+  onboardingStep.value = 0
+  showOnboarding.value = true
+}
+
+const batchShortcutDescription = computed(() => currentTaskType.value === 'review'
+  ? '探测当前页面/列表下的商品链接并批量抓取评论'
+  : '探测当前页面/列表下的所有文档链接')
+const canExportPdf = computed(() => (activePlatform.value?.capabilities.supportsPdf ?? true) && hasSingleFormat('pdf'))
+const canUseBatchScrollScan = computed(() => activePlatform.value?.capabilities.supportsScrollScan ?? true)
+
+const { isExtracting, extractingFormat, extractionProgressMessage, executeCopy, executePDF } = useExtractor({
+  triggerToast,
+  getTaskType: () => currentTaskType.value
+})
+
+const isQueueingReview = ref(false)
+const queueingReviewFormat = ref<'' | 'csv' | 'json'>('')
+
+const queueReviewExtraction = async (format: 'csv' | 'json') => {
+  if (isQueueingReview.value || isExtracting.value || !isSupported.value) return
+
+  isQueueingReview.value = true
+  queueingReviewFormat.value = format
 
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (!tab?.id) throw new Error('找不到活动标签页')
+    if (!tab?.url) throw new Error('找不到活动标签页')
 
-    if (imageMode === 'local') {
-      const response = await sendExtractMessage(tab.id, {
-        action: 'EXTRACT_AND_DOWNLOAD_LOCAL',
-        format: format,
-        options: { imageMode, scrollWaitTime, imageConfig }
-      }, 15 * 60 * 1000)
+    const normalizedUrl = tab.url.split('#')[0]
+    const taskTitle = (tab.title || '').trim() || '评论抓取任务'
 
-      if (response && response.success) {
-        if (response.hasImages) {
-          triggerToast(`已下载 ZIP（图片 ${response.imageCount || 0} 张）`)
-        } else {
-          triggerToast(`已下载 ${format === 'markdown' ? 'Markdown' : 'HTML'} 文件`)
-        }
-        return
+    await batchStore.startBatch([
+      {
+        url: normalizedUrl,
+        title: taskTitle,
+        taskType: 'review'
       }
-      throw new Error(response?.error || '本地下载失败')
-    }
-
-    const timeoutMs = 6 * 60 * 1000
-    const response = await sendExtractMessage(tab.id, {
-      action: 'EXTRACT_CONTENT',
-      format: format,
-      options: { imageMode, scrollWaitTime, imageConfig }
-    }, timeoutMs)
-
-    if (response && response.success) {
-      const hasImages = response.images && response.images.length > 0
-      
-      if (format === 'markdown') {
-        await copyToClipboard(response.content)
-        triggerToast('Markdown 已复制到剪贴板')
-      } else {
-        // HTML copy
-        const textFallback = response.content.replace(/<[^>]+>/g, '')
-        await copyToClipboard(textFallback, response.content)
-        triggerToast('富文本已复制到剪贴板')
+    ], format, {
+      taskType: 'review',
+      imageMode: 'original',
+      foreground: true,
+      batchConcurrency: settings.batchConcurrency,
+      scrollWaitTime: settings.scrollWaitTime,
+      reviewMinRating: settings.reviewMinRating,
+      reviewWithImagesOnly: settings.reviewWithImagesOnly,
+      reviewMaxCount: settings.reviewMaxCount,
+      reviewRecentDays: settings.reviewRecentDays,
+      reviewMaxPages: settings.reviewMaxPages,
+      imageConfig: {
+        enabled: false,
+        ...settings.ossConfig
       }
-    } else {
-      throw new Error(response?.error || '解析失败')
-    }
+    })
+
+    triggerToast(`评论提取任务已加入下载中心（${format.toUpperCase()}，前台运行）`)
+    activeTab.value = 'manager'
   } catch (e: any) {
-    console.error(e)
-    if (e.message.includes("Could not establish connection")) {
-      triggerToast('插件已更新，请刷新原页面')
-    } else {
-      triggerToast('错误: ' + e.message)
-    }
+    triggerToast('错误: ' + (e?.message || '启动任务失败'))
   } finally {
-    isExtracting.value = false
-    extractingFormat.value = ''
+    isQueueingReview.value = false
+    queueingReviewFormat.value = ''
   }
 }
 
-const executePDF = async () => {
-  if (isExtracting.value) return
+useBatchStatusPolling(() => batchStore.updateStatus(), 2000)
 
-  isExtracting.value = true
-  extractingFormat.value = 'pdf'
-
-  const { scrollWaitTime, ossConfig } = settings
-  const imageConfig = {
-    enabled: false,
-    ...ossConfig
-  }
-
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    if (!tab?.id) throw new Error('找不到活动标签页')
-
-    // Always extract as HTML with base64 images for PDF
-    const response = await sendExtractMessage(tab.id, {
-      action: 'EXTRACT_CONTENT',
-      format: 'html',
-      options: { imageMode: 'base64', scrollWaitTime, imageConfig }
-    }, 8 * 60 * 1000)
-
-    if (response && response.success) {
-      // Store content for the print rendering page
-      await chrome.storage.local.set({
-        printData: {
-          title: response.title || 'document',
-          content: response.content,
-          images: response.images || []
-        }
-      })
-
-      triggerToast('PDF 正在生成中...')
-
-      // Delegate PDF generation to background (CDP + bookmarks)
-      const result = await chrome.runtime.sendMessage({
-        action: 'GENERATE_PDF',
-        title: response.title || 'document'
-      })
-
-      if (result && result.success) {
-        triggerToast('PDF 已生成并下载')
-      } else {
-        throw new Error(result?.error || 'PDF 生成失败')
-      }
-    } else {
-      throw new Error(response?.error || '解析失败')
-    }
-  } catch (e: any) {
-    console.error(e)
-    if (e.message.includes('Could not establish connection')) {
-      triggerToast('插件已更新，请刷新原页面')
-    } else {
-      triggerToast('错误: ' + e.message)
-    }
-  } finally {
-    isExtracting.value = false
-    extractingFormat.value = ''
-  }
-}
-
-let statusTimer: number | null = null
 onMounted(() => {
   const manifest = chrome.runtime.getManifest()
   version.value = manifest.version
   settings.setMergeBatchContextAware()
-  checkSupport()
-  
-  batchStore.updateStatus()
-  statusTimer = window.setInterval(() => batchStore.updateStatus(), 2000)
+  void checkSupport().then(() => {
+    maybeStartOnboarding()
+  })
+})
+
+watch(showBatchTab, (visible) => {
+  if (!visible && activeTab.value === 'batch') {
+    activeTab.value = 'main'
+  }
+})
+
+watch(singleFormats, () => {
+  showSecondaryActions.value = false
+})
+
+watch(isSupported, (supported) => {
+  if (supported) {
+    maybeStartOnboarding()
+  }
 })
 
 const showDisclaimer = () => {
@@ -243,7 +262,7 @@ const showDisclaimer = () => {
 }
 
 onUnmounted(() => {
-  if (statusTimer) clearInterval(statusTimer)
+  dismissToast()
 })
 </script>
 
@@ -263,6 +282,23 @@ onUnmounted(() => {
     >
       <div v-if="showToast" class="absolute top-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-gray-800 text-white text-xs rounded-full shadow-xl flex items-center gap-2">
         <span class="text-green-400">✓</span> {{ toastMsg }}
+      </div>
+    </transition>
+
+    <transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="transform -translate-y-2 opacity-0"
+      enter-to-class="transform translate-y-0 opacity-100"
+      leave-active-class="transition duration-150 ease-in"
+      leave-from-class="transform translate-y-0 opacity-100"
+      leave-to-class="transform -translate-y-2 opacity-0"
+    >
+      <div
+        v-if="isExtracting && extractionProgressMessage"
+        class="absolute top-24 left-1/2 -translate-x-1/2 z-40 px-4 py-2 bg-blue-600 text-white text-xs rounded-full shadow-xl flex items-center gap-2 max-w-[88%]"
+      >
+        <span class="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin shrink-0"></span>
+        <span class="truncate">{{ extractionProgressMessage }}</span>
       </div>
     </transition>
 
@@ -310,7 +346,7 @@ onUnmounted(() => {
     <!-- Batch Floating Progress -->
     <div v-else class="px-4 py-3 bg-blue-600 text-white flex flex-col gap-2 shadow-md">
        <div class="flex justify-between items-center">
-          <span class="text-xs font-bold tracking-widest uppercase">{{ batchStore.isPaused ? '任务已暂停' : '正在抓取队列...' }}</span>
+          <span class="text-xs font-bold tracking-widest uppercase">{{ batchStore.isPaused ? '任务已暂停' : `正在抓取${currentEntityLabel}队列...` }}</span>
           <div class="flex gap-2">
              <button
                v-if="!batchStore.isPaused"
@@ -347,61 +383,79 @@ onUnmounted(() => {
 
         <!-- Action Section -->
         <div class="flex flex-col gap-3 mb-6">
-          <!-- Primary Action: Markdown -->
-          <button 
-            @click="executeCopy('markdown')"
-            :disabled="!isSupported || isExtracting"
+          <button
+            @click="runAction(primaryFormat)"
+            :disabled="!isSupported || isAnyActionBusy"
             class="group relative flex flex-col items-center justify-center p-6 rounded-[2rem] bg-white dark:bg-slate-800/40 border-2 border-slate-200/60 dark:border-slate-700/50 hover:border-blue-500 shadow-lg hover:shadow-blue-500/20 transition-all duration-500 disabled:opacity-50"
           >
             <div class="w-14 h-14 mb-3 rounded-2xl bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shadow-lg shadow-blue-500/30 group-hover:scale-105 transition-transform duration-500">
-               <template v-if="isExtracting && extractingFormat === 'markdown'">
+               <template v-if="isFormatBusy(primaryFormat)">
                   <div class="w-7 h-7 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
                </template>
-               <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10M7 17L17 7"/></svg>
+               <span v-else class="text-sm font-black font-mono uppercase">{{ primaryFormat }}</span>
             </div>
-            <span class="text-xl font-black text-slate-800 dark:text-white tracking-tight">复制 Markdown</span>
-            <div class="absolute top-3 right-5 text-[9px] font-black text-blue-500/40 uppercase tracking-widest">Recommended</div>
+            <span class="text-xl font-black text-slate-800 dark:text-white tracking-tight text-center">{{ primaryActionLabel }}</span>
+            <div class="absolute top-3 right-5 text-[9px] font-black text-blue-500/40 uppercase tracking-widest">Main</div>
           </button>
 
-          <!-- PDF Export -->
-          <button 
-            @click="executePDF"
-            :disabled="!isSupported || isExtracting"
-            class="group flex items-center justify-between p-4 px-6 rounded-2xl bg-slate-100 dark:bg-slate-800/30 border border-transparent hover:bg-slate-200 dark:hover:bg-slate-800/60 transition-all duration-300 disabled:opacity-50"
-          >
-            <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded-lg bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center text-rose-500 dark:text-rose-400">
-                <template v-if="isExtracting && extractingFormat === 'pdf'">
-                   <div class="w-4 h-4 border-2 border-rose-400 border-t-transparent rounded-full animate-spin"></div>
-                </template>
-                <span v-else class="text-[10px] font-bold font-mono">PDF</span>
-              </div>
-              <span class="text-sm font-bold text-slate-600 dark:text-slate-300">下载为 PDF</span>
+          <div v-if="isReviewTask" class="rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-white/70 dark:bg-slate-900/40 p-3">
+            <div class="text-[11px] font-black tracking-wider text-slate-500 mb-2">抓取模板</div>
+            <div class="grid grid-cols-3 gap-2">
+              <button
+                v-for="preset in reviewPresets"
+                :key="preset.id"
+                @click="applyReviewPreset(preset)"
+                :class="[
+                  'p-2 rounded-xl border text-left transition-all',
+                  activeReviewPresetId === preset.id
+                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                    : 'border-slate-200 dark:border-slate-700 hover:border-blue-300'
+                ]"
+              >
+                <div class="text-[11px] font-bold text-slate-700 dark:text-slate-200">{{ preset.label }}</div>
+                <div class="text-[10px] text-slate-400 mt-0.5">{{ preset.desc }}</div>
+              </button>
             </div>
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-300 dark:text-slate-700 group-hover:text-rose-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
-          </button>
+          </div>
 
-          <!-- Secondary Action: Rich Text -->
-          <button 
-            @click="executeCopy('html')"
-            :disabled="!isSupported || isExtracting"
-            class="group flex items-center justify-between p-4 px-6 rounded-2xl bg-slate-100 dark:bg-slate-800/30 border border-transparent hover:bg-slate-200 dark:hover:bg-slate-800/60 transition-all duration-300 disabled:opacity-50"
-          >
-            <div class="flex items-center gap-3">
-              <div class="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-400">
-                <template v-if="isExtracting && extractingFormat === 'html'">
-                   <div class="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
-                </template>
-                <span v-else class="text-[10px] font-bold font-mono">HTML</span>
-              </div>
-              <span class="text-sm font-bold text-slate-600 dark:text-slate-300">复制为 富文本</span>
+          <div v-if="strategyHints.length > 0" class="rounded-2xl border border-blue-100 dark:border-blue-900/40 bg-blue-50/70 dark:bg-blue-900/10 px-4 py-3 space-y-1">
+            <div v-for="hint in strategyHints" :key="hint" class="text-[11px] text-blue-700 dark:text-blue-300">- {{ hint }}</div>
+          </div>
+
+          <div v-if="secondaryFormats.length > 0" class="rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-slate-100/60 dark:bg-slate-800/30 px-4 py-3">
+            <button
+              @click="showSecondaryActions = !showSecondaryActions"
+              class="w-full flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-300"
+            >
+              <span>更多格式（{{ secondaryFormats.length }}）</span>
+              <span>{{ showSecondaryActions ? '收起' : '展开' }}</span>
+            </button>
+
+            <div v-if="showSecondaryActions" class="mt-3 space-y-2">
+              <button
+                v-for="format in secondaryFormats"
+                :key="format"
+                @click="runAction(format)"
+                :disabled="!isSupported || isAnyActionBusy"
+                class="group w-full flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-800/40 border border-transparent hover:border-blue-300 dark:hover:border-blue-800 transition-all disabled:opacity-50"
+              >
+                <div class="flex items-center gap-2.5">
+                  <div class="w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300">
+                    <template v-if="isFormatBusy(format)">
+                      <div class="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
+                    </template>
+                    <span v-else class="text-[9px] font-black font-mono uppercase">{{ format }}</span>
+                  </div>
+                  <span class="text-xs font-bold text-slate-600 dark:text-slate-300">{{ formatActionLabelMap[format] }}</span>
+                </div>
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 text-slate-300 dark:text-slate-700 group-hover:text-blue-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
+              </button>
             </div>
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-slate-300 dark:text-slate-700 group-hover:text-blue-500 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m9 18 6-6-6-6"/></svg>
-          </button>
+          </div>
         </div>
 
         <!-- Batch Tools Shortcut -->
-        <div class="mt-auto px-1">
+        <div v-if="showBatchShortcut" class="mt-auto px-1">
           <div class="flex items-center gap-4 mb-2">
             <span class="text-[9px] font-black text-slate-300 dark:text-slate-600 tracking-[0.4em] uppercase">Advanced</span>
             <div class="h-px flex-1 bg-gradient-to-r from-slate-200 dark:from-slate-800 to-transparent"></div>
@@ -415,7 +469,7 @@ onUnmounted(() => {
             </div>
             <div class="text-left flex-1 min-w-0">
               <div class="text-[14px] font-black tracking-tight truncate">批量扫描与导出</div>
-              <div class="text-[10px] text-indigo-100 font-medium opacity-70 truncate">探测当前页面/列表下的所有文档链接</div>
+              <div class="text-[10px] text-indigo-100 font-medium opacity-70 truncate">{{ batchShortcutDescription }}</div>
             </div>
             <!-- Chevron on the right to fill space -->
             <div class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-white/20 transition-colors">
@@ -426,8 +480,8 @@ onUnmounted(() => {
       </div>
 
       <!-- Batch Tab -->
-      <div v-if="activeTab === 'batch'" class="fade-in h-full">
-        <BatchTab />
+      <div v-if="activeTab === 'batch' && showBatchTab" class="fade-in h-full">
+        <BatchTab :task-type="currentTaskType" :supports-scroll-scan="canUseBatchScrollScan" :supports-pdf="canExportPdf" />
       </div>
 
       <!-- Download Center (Manager) -->
@@ -441,13 +495,48 @@ onUnmounted(() => {
       </div>
     </main>
 
+    <div
+      v-if="showOnboarding"
+      class="absolute inset-0 z-30 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-6"
+    >
+      <div class="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl p-5 space-y-4">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-black tracking-[0.25em] uppercase text-blue-500">快速上手</span>
+          <button @click="finishOnboarding" class="text-xs text-slate-400 hover:text-slate-600">跳过</button>
+        </div>
+        <h3 class="text-lg font-black text-slate-800 dark:text-white">3 步学会使用</h3>
+        <p class="text-sm text-slate-600 dark:text-slate-300 leading-relaxed min-h-[42px]">{{ onboardingSteps[onboardingStep] }}</p>
+        <div class="flex items-center gap-1.5">
+          <span
+            v-for="(_, idx) in onboardingSteps"
+            :key="idx"
+            :class="[
+              'h-1.5 rounded-full transition-all',
+              idx === onboardingStep ? 'w-8 bg-blue-500' : 'w-3 bg-slate-300 dark:bg-slate-700'
+            ]"
+          ></span>
+        </div>
+        <div class="flex justify-between pt-1">
+          <button
+            @click="prevOnboardingStep"
+            :disabled="onboardingStep === 0"
+            class="h-9 px-4 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 disabled:opacity-40"
+          >上一步</button>
+          <button
+            @click="nextOnboardingStep"
+            class="h-9 px-5 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700"
+          >{{ onboardingStep >= onboardingSteps.length - 1 ? '完成' : '下一步' }}</button>
+        </div>
+      </div>
+    </div>
+
     <footer class="h-20 border-t border-slate-200/60 dark:border-slate-800/60 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl px-6 flex items-center justify-around shrink-0 relative z-20 shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
       <button @click="activeTab = 'main'" :class="[activeTab === 'main' ? 'text-blue-600 bg-blue-50 dark:bg-blue-500/20 shadow-inner' : 'text-slate-400 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800/50']" class="flex flex-col items-center justify-center px-5 py-2 rounded-2xl transition-all duration-500 group">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 mb-1 transition-transform duration-500 group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         <span class="text-[11px] font-black uppercase tracking-tighter">首页</span>
       </button>
 
-      <button @click="activeTab = 'batch'" :class="[activeTab === 'batch' ? 'text-blue-600 bg-blue-50 dark:bg-blue-500/20 shadow-inner' : 'text-slate-400 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800/50']" class="flex flex-col items-center justify-center px-5 py-2 rounded-2xl transition-all duration-500 group">
+      <button v-if="showBatchTab" @click="activeTab = 'batch'" :class="[activeTab === 'batch' ? 'text-blue-600 bg-blue-50 dark:bg-blue-500/20 shadow-inner' : 'text-slate-400 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800/50']" class="flex flex-col items-center justify-center px-5 py-2 rounded-2xl transition-all duration-500 group">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 mb-1 transition-transform duration-500 group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <span class="text-[11px] font-black uppercase tracking-tighter">批量</span>
       </button>
