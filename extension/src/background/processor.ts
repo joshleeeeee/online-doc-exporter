@@ -21,10 +21,16 @@ function shouldForceForegroundForTask(item: BatchItem) {
     try {
         const parsed = new URL(url)
         const host = parsed.hostname.toLowerCase()
-        return host.includes('jd.com') || host.includes('jd.hk')
+        return host.includes('jd.com')
+            || host.includes('jd.hk')
+            || host.includes('taobao.com')
+            || host.includes('tmall.com')
     } catch (_) {
         const lowered = String(url).toLowerCase()
-        return lowered.includes('jd.com') || lowered.includes('jd.hk')
+        return lowered.includes('jd.com')
+            || lowered.includes('jd.hk')
+            || lowered.includes('taobao.com')
+            || lowered.includes('tmall.com')
     }
 }
 
@@ -90,7 +96,7 @@ async function runBatchItem(item: BatchItem) {
     item.progressTotal = 0
     item.progressMessage = taskType === 'review' ? '正在准备抓取评论区...' : '正在准备抓取内容...'
     if (forceForeground) {
-        item.strategyHint = '已强制前台运行（京东评论）'
+        item.strategyHint = '已强制前台运行（电商评论）'
     }
 
     runtimeState.activeTasks.set(taskUrl, {
@@ -128,7 +134,7 @@ async function runBatchItem(item: BatchItem) {
         if (isTaskCancelled(taskUrl)) throw new Error('Cancelled')
 
         const isPdfFormat = item.format === 'pdf'
-        const isLocalArchiveMode = !isPdfFormat && item.options?.imageMode === 'local'
+        const isLocalArchiveMode = !isPdfFormat && taskType === 'doc' && item.options?.imageMode === 'local'
         const extractTimeoutMs = item.options?.imageMode === 'local'
             ? EXTRACT_TIMEOUT_LOCAL_IMAGE_MS
             : EXTRACT_TIMEOUT_DEFAULT_MS

@@ -586,8 +586,14 @@ export class TaobaoReviewAdapter extends CommerceReviewAdapter {
         const itemId = this.extractProductId(url);
         if (!itemId) return null;
 
-        const canonicalHost = host.includes('tmall.com') ? 'detail.tmall.com' : 'item.taobao.com';
-        return `https://${canonicalHost}/item.htm?id=${itemId}`;
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+
+        // NOTE:
+        // For Taobao/Tmall links, some pages require extra query params
+        // (beyond id) to reliably enter the full detail context and load
+        // review panel variants. Keep the original query string.
+        url.hash = '';
+        return url.toString();
     }
 
     protected isProductPage(url: URL): boolean {

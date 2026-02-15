@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ContentExtract",
-  "version": "1.7.0",
+  "version": "1.7.2",
   "description": "Powerful tool to copy/export online documents (Feishu/Lark etc.) as Markdown or Rich Text.",
   "permissions": [
     "activeTab",

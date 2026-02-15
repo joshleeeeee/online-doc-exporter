@@ -25,6 +25,7 @@ const batchFormat = ref<BatchExportFormat>(props.taskType === 'review' ? 'csv' :
 const showTips = ref({
   sidebar: localStorage.getItem('dismissed-tip-sidebar') !== 'true',
 })
+const showAutoDiscovery = ref(props.taskType !== 'review')
 const manualLinksInput = ref('')
 const manualImportMessage = ref('')
 const manualImportError = ref('')
@@ -52,8 +53,8 @@ const startLabel = computed(() => props.taskType === 'review' ? '开始抓取评
 const emptyHint = computed(() => {
   if (props.taskType === 'review') {
     return props.supportsScrollScan
-      ? '可粘贴商品链接手动导入，或点击「扫描页面/滚动扫描」自动发现'
-      : '可粘贴商品链接手动导入，或点击「扫描页面」自动发现'
+      ? '优先粘贴商品详情链接（无需列表页）；也可点击「扫描页面/滚动扫描」自动发现'
+      : '优先粘贴商品详情链接（无需列表页）；也可点击「扫描页面」自动发现'
   }
   return props.supportsScrollScan
     ? '点击「扫描页面」快速扫描，或「滚动扫描」自动边滚动边发现'
@@ -65,6 +66,7 @@ watch(() => props.taskType, () => {
   selectedIndexes.value.clear()
   batchStore.scannedLinks = []
   isScrollScanning.value = false
+  showAutoDiscovery.value = props.taskType !== 'review'
   batchFormat.value = props.taskType === 'review' ? 'csv' : 'markdown'
   manualLinksInput.value = ''
   manualImportMessage.value = ''
@@ -133,7 +135,7 @@ const inferManualTitle = (url: string) => {
   }
 }
 
-const importManualLinks = () => {
+const importManualLinks = (autoStart = false) => {
   const source = manualLinksInput.value.trim()
   if (!source) {
     manualImportError.value = '请先粘贴商品链接'
@@ -179,6 +181,19 @@ const importManualLinks = () => {
   if (addedCount === 0 && invalidCount > 0) {
     manualImportError.value = '未识别到有效商品链接，请检查粘贴内容'
   }
+
+  if (autoStart && addedCount > 0 && !batchStore.isProcessing) {
+    handleStartBatch()
+    manualImportMessage.value += '，已启动抓取任务'
+  }
+}
+
+const importManualLinksFromInput = () => {
+  importManualLinks(false)
+}
+
+const importManualLinksAndStart = () => {
+  importManualLinks(true)
 }
 
 const clearManualLinks = () => {
@@ -309,10 +324,11 @@ const handleStartBatch = () => {
   if (items.length === 0) return
 
   const resolvedConcurrency = props.taskType === 'review' ? 1 : settingsStore.batchConcurrency
+  const resolvedImageMode = props.taskType === 'review' ? 'original' : settingsStore.imageMode
 
   batchStore.startBatch(items, batchFormat.value, {
     taskType: props.taskType,
-    imageMode: settingsStore.imageMode,
+    imageMode: resolvedImageMode,
     foreground: settingsStore.foreground,
     batchConcurrency: resolvedConcurrency,
     scrollWaitTime: settingsStore.scrollWaitTime,
@@ -322,7 +338,7 @@ const handleStartBatch = () => {
     reviewRecentDays: settingsStore.reviewRecentDays,
     reviewMaxPages: settingsStore.reviewMaxPages,
     imageConfig: {
-      enabled: settingsStore.imageMode === 'minio',
+      enabled: resolvedImageMode === 'minio',
       ...settingsStore.ossConfig
     }
   })
@@ -333,36 +349,52 @@ const handleStartBatch = () => {
   <div class="flex flex-col min-h-full">
     <div v-if="props.taskType === 'review'" class="mb-4 p-3 rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-white/70 dark:bg-slate-900/40 space-y-2.5">
       <div class="flex items-center justify-between">
-        <div class="text-[11px] font-black tracking-wider text-slate-500">手动导入商品链接</div>
-        <span class="text-[10px] text-slate-400">支持换行/空格分隔</span>
+        <div class="text-[12px] font-black tracking-wide text-slate-500">手动导入商品链接</div>
+        <span class="text-[11px] text-slate-400">支持换行/空格分隔</span>
       </div>
 
       <textarea
         v-model="manualLinksInput"
         rows="4"
-        placeholder="粘贴多个商品链接，例如：&#10;https://item.jd.com/100287911980.html&#10;https://item.jd.com/100283906796.html"
+        placeholder="粘贴多个商品详情链接（无需先打开列表页），例如：&#10;https://item.jd.com/100287911980.html&#10;https://detail.tmall.com/item.htm?id=1234567890"
         class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-xs leading-relaxed text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
       ></textarea>
 
-      <div class="flex gap-2">
+      <div class="grid grid-cols-2 gap-2">
         <button
-          @click="importManualLinks"
-          class="flex-1 h-9 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors"
+          @click="importManualLinksFromInput"
+          :disabled="batchStore.isProcessing"
+          class="h-9 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50"
         >导入链接并自动勾选</button>
         <button
-          @click="clearManualLinks"
-          class="h-9 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors"
-        >清空</button>
+          @click="importManualLinksAndStart"
+          :disabled="batchStore.isProcessing"
+          class="h-9 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors disabled:opacity-50"
+        >导入并开始抓取</button>
       </div>
 
-      <div class="text-[10px] text-slate-400">评论批量任务会按顺序逐一执行（并发固定为 1）。</div>
-      <div v-if="manualImportMessage" class="text-[11px] text-emerald-600 dark:text-emerald-400">{{ manualImportMessage }}</div>
-      <div v-if="manualImportError" class="text-[11px] text-red-500">{{ manualImportError }}</div>
+      <button
+        @click="clearManualLinks"
+        class="h-8 px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors"
+      >清空输入</button>
+
+      <div class="text-[12px] leading-relaxed text-slate-500">无需先打开列表页；任务会自动逐个打开商品详情页抓取评论（并发固定为 1）。</div>
+      <div class="text-[12px] leading-relaxed text-slate-500">如果你当前就在商品详情页，也可以回到首页直接一键提取。</div>
+      <div v-if="manualImportMessage" class="text-[12px] text-emerald-600 dark:text-emerald-400">{{ manualImportMessage }}</div>
+      <div v-if="manualImportError" class="text-[12px] text-red-500">{{ manualImportError }}</div>
     </div>
 
     <!-- Scan Buttons -->
     <div class="flex flex-col gap-3 mb-4">
-      <div class="flex gap-2">
+      <div v-if="props.taskType === 'review'" class="flex items-center justify-between px-1">
+        <span class="text-[12px] font-bold text-slate-500">从当前页面自动发现链接（可选）</span>
+        <button
+          @click="showAutoDiscovery = !showAutoDiscovery"
+          class="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-500 hover:text-blue-600 hover:border-blue-300 transition-colors"
+        >{{ showAutoDiscovery ? '收起' : '展开' }}</button>
+      </div>
+
+      <div v-if="props.taskType !== 'review' || showAutoDiscovery" class="flex gap-2">
         <button 
           @click="scanLinks"
           :disabled="isScanning || isScrollScanning || batchStore.isProcessing"
@@ -476,7 +508,7 @@ const handleStartBatch = () => {
     <div class="overflow-y-auto custom-scrollbar pr-1 -mr-1 min-h-[160px] max-h-[260px]">
       <div v-if="batchStore.scannedLinks.length === 0" class="h-40 flex flex-col items-center justify-center text-gray-400 gap-2 opacity-60 italic">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-        <span class="text-xs">{{ emptyHint }}</span>
+        <span class="text-sm">{{ emptyHint }}</span>
       </div>
 
       <div class="space-y-2">
@@ -496,8 +528,8 @@ const handleStartBatch = () => {
           <div class="flex-1 min-width-0">
              <h4 :class="[isDownloaded(item.url) ? 'text-gray-400' : 'text-gray-700 dark:text-gray-200']" class="text-sm font-medium leading-tight line-clamp-2 break-all">{{ item.title }}</h4>
              <div class="flex items-center gap-2 mt-1.5 hide-scrollbar overflow-x-auto whitespace-nowrap">
-                <span v-if="isDownloaded(item.url)" class="text-[10px] font-bold text-green-600 bg-green-50 dark:bg-green-900/30 px-1.5 py-0.5 rounded uppercase border border-green-100 dark:border-green-800">已下载</span>
-                <span class="text-[11px] text-gray-400 font-mono truncate max-w-[200px]">{{ item.url }}</span>
+                <span v-if="isDownloaded(item.url)" class="text-[11px] font-bold text-green-600 bg-green-50 dark:bg-green-900/30 px-1.5 py-0.5 rounded uppercase border border-green-100 dark:border-green-800">已下载</span>
+                <span class="text-[12px] text-gray-400 font-mono truncate max-w-[200px]">{{ item.url }}</span>
              </div>
           </div>
         </div>

@@ -11,7 +11,7 @@ import { useExtractor } from '../composables/useExtractor'
 import { useBatchStatusPolling } from '../composables/useBatchStatusPolling'
 import type { ExportFormat, TaskType } from '../platformRegistry'
 
-const version = ref('1.7.0')
+const version = ref('1.7.2')
 const activeTab = ref('main')
 const settings = useSettingsStore()
 const batchStore = useBatchStore()
@@ -29,6 +29,9 @@ const singleFormats = computed<ExportFormat[]>(() => activePageContext.value?.ui
 const hasSingleFormat = (format: ExportFormat) => singleFormats.value.includes(format)
 
 const isReviewTask = computed(() => currentTaskType.value === 'review')
+const allowSingleActions = computed(() => activePageContext.value?.ui.allowSingleActions ?? true)
+const canRunSingleActions = computed(() => isSupported.value && allowSingleActions.value)
+const isSingleActionBlocked = computed(() => isSupported.value && !allowSingleActions.value)
 const showBatchShortcut = computed(() => activePageContext.value?.ui.showBatchShortcut ?? true)
 const showBatchTab = computed(() => {
   const pageAllows = activePageContext.value?.ui.showBatchTab ?? true
@@ -72,6 +75,8 @@ const isFormatBusy = (format: ExportFormat) => {
 }
 
 const runAction = (format: ExportFormat) => {
+  if (!canRunSingleActions.value || isAnyActionBusy.value) return
+
   if (format === 'pdf') {
     void executePDF()
     return
@@ -93,6 +98,10 @@ const strategyHints = computed(() => {
 
   if (isReviewTask.value && (url.includes('jd.com') || url.includes('jd.hk'))) {
     hints.push('已启用京东前台策略：自动展开“全部评价”并在评论容器内滚动增量抓取。')
+  }
+
+  if (isReviewTask.value && (url.includes('taobao.com') || url.includes('tmall.com'))) {
+    hints.push('已启用淘宝/天猫前台策略：自动打开“全部评价”并在评论容器内滚动增量抓取。')
   }
 
   if (isReviewTask.value) {
@@ -165,7 +174,7 @@ const prevOnboardingStep = () => {
 const maybeStartOnboarding = () => {
   const hasSeen = localStorage.getItem(onboardingStorageKey) === 'true'
   if (hasSeen) return
-  if (!isSupported.value) return
+  if (!canRunSingleActions.value) return
   onboardingStep.value = 0
   showOnboarding.value = true
 }
@@ -321,22 +330,24 @@ onUnmounted(() => {
           ☕ 打赏
         </a>
         <div class="flex flex-col items-end">
-          <span class="text-[10px] text-slate-400 dark:text-slate-500 font-mono font-bold leading-tight">v{{ version }}</span>
-          <button @click="showDisclaimer" class="text-[10px] text-slate-400 dark:text-slate-500 hover:text-blue-500 underline decoration-dotted underline-offset-2 transition-colors leading-tight">免责声明</button>
+          <span class="text-[11px] text-slate-400 dark:text-slate-500 font-mono font-bold leading-tight">v{{ version }}</span>
+          <button @click="showDisclaimer" class="text-[11px] text-slate-400 dark:text-slate-500 hover:text-blue-500 underline decoration-dotted underline-offset-2 transition-colors leading-tight">免责声明</button>
         </div>
       </div>
     </header>
 
     <!-- Status Banner (Conditional based on Batch Active) -->
     <div v-if="!batchStore.isProcessing && !batchStore.isPaused && batchStore.queueLength === 0 && !batchStore.currentItem" :class="[
-      'px-4 py-1.5 flex items-center gap-2 text-[11px] font-medium transition-colors',
+      'px-4 py-2.5 flex items-start gap-2 text-[13px] leading-relaxed font-semibold transition-colors',
       isDetecting ? 'bg-gray-100 text-gray-500' : 
+      isSingleActionBlocked ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400' :
       isSupported ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400' : 
       'bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400'
     ]">
       <div :class="[
-        'w-1.5 h-1.5 rounded-full',
+        'w-2 h-2 rounded-full mt-1.5 shrink-0',
         isDetecting ? 'bg-gray-400 animate-pulse' :
+        isSingleActionBlocked ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.45)]' :
         isSupported ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]' :
         'bg-red-500'
       ]"></div>
@@ -352,7 +363,7 @@ onUnmounted(() => {
                v-if="!batchStore.isPaused"
                @click="batchStore.pauseBatch"
                :disabled="batchStore.isPausing"
-               class="text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded uppercase font-bold disabled:opacity-60 flex items-center gap-1"
+               class="text-[11px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded uppercase font-bold disabled:opacity-60 flex items-center gap-1"
              >
                <span v-if="batchStore.isPausing" class="w-2.5 h-2.5 border border-white/50 border-t-white rounded-full animate-spin"></span>
                <span>{{ batchStore.isPausing ? '暂停中' : '暂停' }}</span>
@@ -361,7 +372,7 @@ onUnmounted(() => {
                v-else
                @click="batchStore.resumeBatch"
                :disabled="batchStore.isResuming"
-               class="text-[10px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded uppercase font-bold disabled:opacity-60 flex items-center gap-1"
+               class="text-[11px] bg-white/20 hover:bg-white/30 px-2 py-1 rounded uppercase font-bold disabled:opacity-60 flex items-center gap-1"
              >
                <span v-if="batchStore.isResuming" class="w-2.5 h-2.5 border border-white/50 border-t-white rounded-full animate-spin"></span>
                <span>{{ batchStore.isResuming ? '继续中' : '继续' }}</span>
@@ -371,7 +382,7 @@ onUnmounted(() => {
        <div class="w-full h-1.5 bg-blue-400 rounded-full overflow-hidden">
           <div :style="{ width: batchStore.progressPercent + '%' }" class="h-full bg-white transition-all duration-500"></div>
        </div>
-       <div class="text-[11px] opacity-90 font-medium">
+       <div class="text-[12px] opacity-95 font-medium">
           已完成 {{ batchStore.processedResults.length }} / 共 {{ batchStore.processedResults.length + batchStore.queueLength + batchStore.activeCount }} · 并发 {{ batchStore.effectiveConcurrency }}
        </div>
     </div>
@@ -381,12 +392,24 @@ onUnmounted(() => {
       <!-- Main Tab -->
       <div v-if="activeTab === 'main'" class="h-full flex flex-col pt-0 fade-in">
 
+        <div
+          v-if="isSingleActionBlocked"
+          class="mb-4 rounded-2xl border border-amber-200/80 dark:border-amber-900/50 bg-amber-50/80 dark:bg-amber-900/15 px-4 py-3.5"
+        >
+          <div class="text-[13px] font-black tracking-wide text-amber-700 dark:text-amber-300 mb-1.5">当前页不适合单页抓取</div>
+          <div class="text-sm text-amber-700/95 dark:text-amber-200/95 leading-relaxed">{{ supportMessage }}</div>
+          <button
+            @click="activeTab = 'batch'"
+            class="mt-3 h-10 px-4 rounded-lg bg-amber-600 text-white text-sm font-bold hover:bg-amber-700 transition-colors"
+          >去批量页粘贴商品详情链接</button>
+        </div>
+
         <!-- Action Section -->
         <div class="flex flex-col gap-3 mb-6">
           <button
             @click="runAction(primaryFormat)"
-            :disabled="!isSupported || isAnyActionBusy"
-            class="group relative flex flex-col items-center justify-center p-6 rounded-[2rem] bg-white dark:bg-slate-800/40 border-2 border-slate-200/60 dark:border-slate-700/50 hover:border-blue-500 shadow-lg hover:shadow-blue-500/20 transition-all duration-500 disabled:opacity-50"
+            :disabled="!canRunSingleActions || isAnyActionBusy"
+            class="group relative flex flex-col items-center justify-center p-6 rounded-[2rem] bg-white dark:bg-slate-800/40 border-2 border-slate-200/60 dark:border-slate-700/50 hover:border-blue-500 shadow-lg hover:shadow-blue-500/20 transition-all duration-500 disabled:opacity-80"
           >
             <div class="w-14 h-14 mb-3 rounded-2xl bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shadow-lg shadow-blue-500/30 group-hover:scale-105 transition-transform duration-500">
                <template v-if="isFormatBusy(primaryFormat)">
@@ -398,8 +421,12 @@ onUnmounted(() => {
             <div class="absolute top-3 right-5 text-[9px] font-black text-blue-500/40 uppercase tracking-widest">Main</div>
           </button>
 
+          <div v-if="isSingleActionBlocked" class="text-[13px] font-medium text-amber-700 dark:text-amber-300 px-1 -mt-1 leading-relaxed">
+            提示：当前页可直接去“批量”页粘贴多个商品详情链接抓评论，无需先打开列表页。
+          </div>
+
           <div v-if="isReviewTask" class="rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-white/70 dark:bg-slate-900/40 p-3">
-            <div class="text-[11px] font-black tracking-wider text-slate-500 mb-2">抓取模板</div>
+            <div class="text-[12px] font-black tracking-wide text-slate-500 mb-2">抓取模板</div>
             <div class="grid grid-cols-3 gap-2">
               <button
                 v-for="preset in reviewPresets"
@@ -412,14 +439,14 @@ onUnmounted(() => {
                     : 'border-slate-200 dark:border-slate-700 hover:border-blue-300'
                 ]"
               >
-                <div class="text-[11px] font-bold text-slate-700 dark:text-slate-200">{{ preset.label }}</div>
-                <div class="text-[10px] text-slate-400 mt-0.5">{{ preset.desc }}</div>
+                <div class="text-[12px] font-bold text-slate-700 dark:text-slate-200">{{ preset.label }}</div>
+                <div class="text-[11px] text-slate-500 dark:text-slate-300 mt-0.5">{{ preset.desc }}</div>
               </button>
             </div>
           </div>
 
           <div v-if="strategyHints.length > 0" class="rounded-2xl border border-blue-100 dark:border-blue-900/40 bg-blue-50/70 dark:bg-blue-900/10 px-4 py-3 space-y-1">
-            <div v-for="hint in strategyHints" :key="hint" class="text-[11px] text-blue-700 dark:text-blue-300">- {{ hint }}</div>
+            <div v-for="hint in strategyHints" :key="hint" class="text-[12px] leading-relaxed text-blue-700 dark:text-blue-300">- {{ hint }}</div>
           </div>
 
           <div v-if="secondaryFormats.length > 0" class="rounded-2xl border border-slate-200/70 dark:border-slate-700/70 bg-slate-100/60 dark:bg-slate-800/30 px-4 py-3">
@@ -436,7 +463,7 @@ onUnmounted(() => {
                 v-for="format in secondaryFormats"
                 :key="format"
                 @click="runAction(format)"
-                :disabled="!isSupported || isAnyActionBusy"
+                :disabled="!canRunSingleActions || isAnyActionBusy"
                 class="group w-full flex items-center justify-between p-3 rounded-xl bg-white dark:bg-slate-800/40 border border-transparent hover:border-blue-300 dark:hover:border-blue-800 transition-all disabled:opacity-50"
               >
                 <div class="flex items-center gap-2.5">
@@ -457,7 +484,7 @@ onUnmounted(() => {
         <!-- Batch Tools Shortcut -->
         <div v-if="showBatchShortcut" class="mt-auto px-1">
           <div class="flex items-center gap-4 mb-2">
-            <span class="text-[9px] font-black text-slate-300 dark:text-slate-600 tracking-[0.4em] uppercase">Advanced</span>
+            <span class="text-[10px] font-black text-slate-300 dark:text-slate-600 tracking-[0.3em] uppercase">Advanced</span>
             <div class="h-px flex-1 bg-gradient-to-r from-slate-200 dark:from-slate-800 to-transparent"></div>
           </div>
           <button 
@@ -469,7 +496,7 @@ onUnmounted(() => {
             </div>
             <div class="text-left flex-1 min-w-0">
               <div class="text-[14px] font-black tracking-tight truncate">批量扫描与导出</div>
-              <div class="text-[10px] text-indigo-100 font-medium opacity-70 truncate">{{ batchShortcutDescription }}</div>
+              <div class="text-[11px] text-indigo-100 font-medium opacity-85 truncate">{{ batchShortcutDescription }}</div>
             </div>
             <!-- Chevron on the right to fill space -->
             <div class="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-white/20 transition-colors">
@@ -533,20 +560,20 @@ onUnmounted(() => {
     <footer class="h-20 border-t border-slate-200/60 dark:border-slate-800/60 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl px-6 flex items-center justify-around shrink-0 relative z-20 shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
       <button @click="activeTab = 'main'" :class="[activeTab === 'main' ? 'text-blue-600 bg-blue-50 dark:bg-blue-500/20 shadow-inner' : 'text-slate-400 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800/50']" class="flex flex-col items-center justify-center px-5 py-2 rounded-2xl transition-all duration-500 group">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 mb-1 transition-transform duration-500 group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-        <span class="text-[11px] font-black uppercase tracking-tighter">首页</span>
+        <span class="text-[12px] font-black uppercase tracking-tight">首页</span>
       </button>
 
       <button v-if="showBatchTab" @click="activeTab = 'batch'" :class="[activeTab === 'batch' ? 'text-blue-600 bg-blue-50 dark:bg-blue-500/20 shadow-inner' : 'text-slate-400 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800/50']" class="flex flex-col items-center justify-center px-5 py-2 rounded-2xl transition-all duration-500 group">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 mb-1 transition-transform duration-500 group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <span class="text-[11px] font-black uppercase tracking-tighter">批量</span>
+        <span class="text-[12px] font-black uppercase tracking-tight">批量</span>
       </button>
       
       <button @click="activeTab = 'manager'" :class="[activeTab === 'manager' ? 'text-blue-600 bg-blue-50 dark:bg-blue-500/20 shadow-inner' : 'text-slate-400 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800/50']" class="flex flex-col items-center justify-center px-5 py-2 rounded-2xl transition-all duration-500 relative group">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 mb-1 transition-transform duration-500 group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-        <span class="text-[11px] font-black uppercase tracking-tighter">下载</span>
+        <span class="text-[12px] font-black uppercase tracking-tight">下载</span>
         <!-- Numeric Badge -->
         <span v-if="batchStore.processedResults.length > 0" 
-          class="absolute top-1 right-3.5 min-w-[17px] h-[17px] bg-red-500 text-white text-[9px] font-black rounded-full border border-white dark:border-slate-900 shadow-lg shadow-red-500/20 flex items-center justify-center leading-none tabular-nums animate-in zoom-in duration-300"
+          class="absolute top-1 right-3.5 min-w-[19px] h-[19px] bg-red-500 text-white text-[9px] font-black rounded-full border border-white dark:border-slate-900 shadow-lg shadow-red-500/20 flex items-center justify-center leading-none tabular-nums animate-in zoom-in duration-300"
         >
           <span class="translate-y-[0.5px]">{{ batchStore.processedResults.length > 99 ? '99+' : batchStore.processedResults.length }}</span>
         </span>
@@ -554,7 +581,7 @@ onUnmounted(() => {
 
       <button @click="activeTab = 'settings'" :class="[activeTab === 'settings' ? 'text-blue-600 bg-blue-50 dark:bg-blue-500/20 shadow-inner' : 'text-slate-400 hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800/50']" class="flex flex-col items-center justify-center px-5 py-2 rounded-2xl transition-all duration-500 group">
         <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 mb-1 transition-transform duration-500 group-hover:scale-110" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33 1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1-2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        <span class="text-[11px] font-black uppercase tracking-tighter">设置</span>
+        <span class="text-[12px] font-black uppercase tracking-tight">设置</span>
       </button>
     </footer>
   </div>
@@ -602,5 +629,25 @@ button:disabled {
 .hide-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+.text-xs {
+  font-size: 0.8125rem !important;
+  line-height: 1.25rem !important;
+}
+
+.text-\[9px\] {
+  font-size: 11px !important;
+  line-height: 1.2 !important;
+}
+
+.text-\[10px\] {
+  font-size: 12px !important;
+  line-height: 1.25 !important;
+}
+
+.text-\[11px\] {
+  font-size: 13px !important;
+  line-height: 1.3 !important;
 }
 </style>

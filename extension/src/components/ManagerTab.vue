@@ -149,7 +149,156 @@ const fetchArchiveBase64ByKey = (key: string): Promise<string | null> => {
   })
 }
 
+const normalizeBase64Payload = (value: string) => {
+  const normalized = String(value || '')
+    .trim()
+    .replace(/^data:[^;]+;base64,/i, '')
+    .replace(/-/g, '+')
+    .replace(/_/g, '/')
+    .replace(/\s+/g, '')
+
+  if (!normalized) return ''
+  const remainder = normalized.length % 4
+  if (remainder === 0) return normalized
+  return normalized + '='.repeat(4 - remainder)
+}
+
+const base64ToBytes = (value: string) => {
+  const normalized = normalizeBase64Payload(value)
+  if (!normalized) {
+    throw new Error('空的 Base64 数据')
+  }
+
+  const binary = atob(normalized)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
+}
+
+const blobToDataUrl = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('Blob 转 DataURL 失败'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+const downloadByUrl = (url: string, filename: string): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    chrome.downloads.download({
+      url,
+      filename,
+      conflictAction: 'uniquify'
+    }, (downloadId) => {
+      const err = chrome.runtime.lastError
+      if (err || !downloadId) {
+        reject(new Error(err?.message || '下载失败'))
+        return
+      }
+      resolve()
+    })
+  })
+}
+
+const triggerDownloadByAnchor = (url: string, filename: string) => {
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.style.display = 'none'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+}
+
+const triggerDownload = async (blob: Blob, filename: string) => {
+  // Small files use data URL via downloads API (popup lifecycle safe)
+  if (blob.size <= 8 * 1024 * 1024) {
+    try {
+      const dataUrl = await blobToDataUrl(blob)
+      await downloadByUrl(dataUrl, filename)
+      return
+    } catch (e) {
+      console.warn('[Download] DataURL fallback failed, switch to blob URL', e)
+    }
+  }
+
+  const dlUrl = URL.createObjectURL(blob)
+  try {
+    await downloadByUrl(dlUrl, filename)
+  } catch (e) {
+    console.warn('[Download] downloads API failed, fallback anchor click', e)
+    triggerDownloadByAnchor(dlUrl, filename)
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(dlUrl), 120_000)
+  }
+}
+
+const recoverTextFromArchive = async (item: any): Promise<string> => {
+  const archiveBase64 = item.archiveBase64 || (item.archiveStorageKey ? await fetchArchiveBase64ByKey(item.archiveStorageKey) : null)
+  if (!archiveBase64) return ''
+
+  try {
+    const archiveZip = await JSZip.loadAsync(base64ToBytes(archiveBase64))
+    const files = Object.values(archiveZip.files).filter(file => !file.dir)
+    if (files.length === 0) return ''
+
+    const preferredExt = item.format === 'json' ? '.json' : (item.format === 'csv' ? '.csv' : '')
+    const preferredFile = preferredExt
+      ? files.find(file => file.name.toLowerCase().endsWith(preferredExt))
+      : null
+    const targetFile = preferredFile || files[0]
+    if (!targetFile) return ''
+
+    return await targetFile.async('string')
+  } catch (e) {
+    console.warn('[Download] Recover text from archive failed', e)
+    return ''
+  }
+}
+
+const downloadReviewItemsAsFiles = async (items: BatchItem[]) => {
+  for (let i = 0; i < items.length; i++) {
+    const source = items[i]
+    downloadProgress.value = `正在导出评论文件 ${i + 1}/${items.length}...`
+
+    const item = await fetchSingleResult(source.url)
+    if (!item) continue
+
+    const safeTitle = sanitizeDownloadName(normalizeExportTitle(item.title) || item.title || 'document')
+    const formatMeta = getExportFormatMeta(item.format)
+
+    let content = typeof item.content === 'string' ? item.content : ''
+    if (!content && (item.archiveBase64 || item.archiveStorageKey)) {
+      content = await recoverTextFromArchive(item)
+    }
+
+    const blob = new Blob([encodeExportContent(item.format, content || '')], { type: formatMeta.mime })
+    await triggerDownload(blob, `${safeTitle}${formatMeta.ext}`)
+    await new Promise(r => setTimeout(r, 180))
+  }
+}
+
 const handleDownloadZip = async () => {
+  const selectedSuccessItems = batchStore.processedResults.filter(r => selectedUrls.value.has(r.url) && r.status === 'success')
+  const pureReviewSelection = selectedSuccessItems.length > 0 && selectedSuccessItems.every(item => {
+    const taskType = item.taskType || 'doc'
+    return taskType === 'review' && (item.format === 'csv' || item.format === 'json')
+  })
+
+  if (pureReviewSelection) {
+    isDownloading.value = true
+    try {
+      await downloadReviewItemsAsFiles(selectedSuccessItems)
+    } finally {
+      isDownloading.value = false
+      downloadProgress.value = ''
+    }
+    return
+  }
+
   const vols = volumes.value.map(v => [...v])
   if (vols.length === 0) return
 
@@ -175,19 +324,22 @@ const handleDownloadZip = async () => {
         if (!item) continue
 
         const safeTitle = sanitizeDownloadName(normalizeExportTitle(item.title) || item.title || 'document')
+        const isReviewTask = (item.taskType || 'doc') === 'review'
+        const hasTextContent = typeof item.content === 'string' && item.content.length > 0
+        const shouldUseArchive = !isReviewTask && !!(item.archiveBase64 || item.archiveStorageKey)
 
         if (item.format === 'pdf') {
           if (item.content) {
-            zip.file(`${safeTitle}.pdf`, item.content, { base64: true })
+            zip.file(`${safeTitle}.pdf`, base64ToBytes(item.content))
           }
-        } else if (item.archiveBase64 || item.archiveStorageKey) {
+        } else if (shouldUseArchive) {
           const archiveBase64 = item.archiveBase64 || (item.archiveStorageKey ? await fetchArchiveBase64ByKey(item.archiveStorageKey) : null)
           if (archiveBase64) {
-            zip.file(`${safeTitle}.zip`, archiveBase64, { base64: true })
+            zip.file(`${safeTitle}.zip`, base64ToBytes(archiveBase64))
           }
         } else {
           const formatMeta = getExportFormatMeta(item.format)
-          zip.file(`${safeTitle}${formatMeta.ext}`, encodeExportContent(item.format, item.content || ''))
+          zip.file(`${safeTitle}${formatMeta.ext}`, encodeExportContent(item.format, hasTextContent ? item.content : ''))
           if ((item.format === 'markdown' || item.format === 'html') && item.images && Array.isArray(item.images)) {
             item.images.forEach((img: any) => {
               if (img.base64 && img.filename) {
@@ -217,14 +369,10 @@ const handleDownloadZip = async () => {
         : '正在打包...'
 
       const blob = await zip.generateAsync({ type: "blob" })
-      const dlUrl = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = dlUrl
-      a.download = vols.length > 1
+      const filename = vols.length > 1
         ? `Batch_Export_${timestamp}_Vol${vi + 1}.zip`
         : `Batch_Export_${timestamp}.zip`
-      a.click()
-      URL.revokeObjectURL(dlUrl)
+      await triggerDownload(blob, filename)
 
       // Delay between volumes to avoid browser blocking multiple downloads
       if (vi < vols.length - 1) {
@@ -439,38 +587,21 @@ const handleSingleDownload = async (item: BatchItem) => {
         if (response && response.success && response.data.length > 0) {
             const data = response.data[0]
             const safeTitle = sanitizeDownloadName(normalizeExportTitle(data.title) || data.title || 'document')
+            const isReviewTask = (data.taskType || 'doc') === 'review'
+            const hasTextContent = typeof data.content === 'string' && data.content.length > 0
+            const shouldUseArchive = !isReviewTask && !!(data.archiveBase64 || data.archiveStorageKey)
             
             if (data.format === 'pdf') {
                 // PDF: decode base64 and download as .pdf
                 if (data.content) {
-                    const byteChars = atob(data.content)
-                    const byteArray = new Uint8Array(byteChars.length)
-                    for (let i = 0; i < byteChars.length; i++) {
-                        byteArray[i] = byteChars.charCodeAt(i)
-                    }
-                    const blob = new Blob([byteArray], { type: 'application/pdf' })
-                    const dlUrl = URL.createObjectURL(blob)
-                    const a = document.createElement('a')
-                    a.href = dlUrl
-                    a.download = `${safeTitle}.pdf`
-                    a.click()
-                    URL.revokeObjectURL(dlUrl)
+                    const blob = new Blob([base64ToBytes(data.content)], { type: 'application/pdf' })
+                    await triggerDownload(blob, `${safeTitle}.pdf`)
                 }
-            } else if (data.archiveBase64 || data.archiveStorageKey) {
+            } else if (shouldUseArchive) {
                 const archiveBase64 = data.archiveBase64 || (data.archiveStorageKey ? await fetchArchiveBase64ByKey(data.archiveStorageKey) : null)
                 if (!archiveBase64) return
-                const byteChars = atob(archiveBase64)
-                const byteArray = new Uint8Array(byteChars.length)
-                for (let i = 0; i < byteChars.length; i++) {
-                    byteArray[i] = byteChars.charCodeAt(i)
-                }
-                const blob = new Blob([byteArray], { type: 'application/zip' })
-                const dlUrl = URL.createObjectURL(blob)
-                const a = document.createElement('a')
-                a.href = dlUrl
-                a.download = `${safeTitle}.zip`
-                a.click()
-                URL.revokeObjectURL(dlUrl)
+                const blob = new Blob([base64ToBytes(archiveBase64)], { type: 'application/zip' })
+                await triggerDownload(blob, `${safeTitle}.zip`)
             } else {
                 const formatMeta = getExportFormatMeta(data.format)
                 const hasImages = (data.format === 'markdown' || data.format === 'html') && data.images && data.images.length > 0
@@ -488,20 +619,10 @@ const handleSingleDownload = async (item: BatchItem) => {
                     })
 
                     const blob = await zip.generateAsync({ type: "blob" })
-                    const dlUrl = URL.createObjectURL(blob)
-                    const a = document.createElement('a')
-                    a.href = dlUrl
-                    a.download = `${safeTitle}.zip`
-                    a.click()
-                    URL.revokeObjectURL(dlUrl)
+                    await triggerDownload(blob, `${safeTitle}.zip`)
                 } else {
-                    const blob = new Blob([encodeExportContent(data.format, data.content || '')], { type: formatMeta.mime })
-                    const dlUrl = URL.createObjectURL(blob)
-                    const a = document.createElement('a')
-                    a.href = dlUrl
-                    a.download = `${safeTitle}${formatMeta.ext}`
-                    a.click()
-                    URL.revokeObjectURL(dlUrl)
+                    const blob = new Blob([encodeExportContent(data.format, hasTextContent ? data.content : '')], { type: formatMeta.mime })
+                    await triggerDownload(blob, `${safeTitle}${formatMeta.ext}`)
                 }
             }
         }

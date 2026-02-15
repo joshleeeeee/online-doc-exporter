@@ -29,6 +29,7 @@ export interface PlatformPageContext {
         singleFormats: ExportFormat[];
         showBatchShortcut: boolean;
         showBatchTab: boolean;
+        allowSingleActions: boolean;
     };
 }
 
@@ -159,19 +160,36 @@ export function detectPlatformPageContextByUrl(url: string): PlatformPageContext
     let singleFormats = getDefaultSingleFormats(platform.capabilities.taskType)
     let showBatchShortcut = platform.capabilities.supportsScanLinks
     let showBatchTab = platform.capabilities.supportsScanLinks
+    let allowSingleActions = true
 
-    if (platform.id === 'jd' && isJdProductDetailUrl(parsedUrl)) {
-        supportMessage = '当前是京东商品详情页，建议导出评论 CSV / JSON（可在批量页粘贴多个商品链接）'
-        singleFormats = ['csv', 'json']
-        showBatchShortcut = false
-        showBatchTab = true
+    if (platform.id === 'jd') {
+        if (isJdProductDetailUrl(parsedUrl)) {
+            supportMessage = '当前是京东商品详情页，可直接抓取评论 CSV / JSON'
+            singleFormats = ['csv', 'json']
+            showBatchShortcut = false
+            showBatchTab = true
+        } else {
+            supportMessage = '当前不是京东商品详情页。请进入商品详情页后单页抓取，或前往批量页粘贴多个商品详情链接（无需先打开列表页）'
+            singleFormats = ['csv', 'json']
+            showBatchShortcut = true
+            showBatchTab = true
+            allowSingleActions = false
+        }
     }
 
-    if (platform.id === 'taobao' && isTaobaoProductDetailUrl(parsedUrl)) {
-        supportMessage = '当前是淘宝/天猫商品详情页，建议导出评论 CSV / JSON（可在批量页粘贴多个商品链接）'
-        singleFormats = ['csv', 'json']
-        showBatchShortcut = false
-        showBatchTab = true
+    if (platform.id === 'taobao') {
+        if (isTaobaoProductDetailUrl(parsedUrl)) {
+            supportMessage = '当前是淘宝/天猫商品详情页，可直接抓取评论 CSV / JSON'
+            singleFormats = ['csv', 'json']
+            showBatchShortcut = false
+            showBatchTab = true
+        } else {
+            supportMessage = '当前不是淘宝/天猫商品详情页。请进入商品详情页后单页抓取，或前往批量页粘贴多个商品详情链接（无需先打开列表页）'
+            singleFormats = ['csv', 'json']
+            showBatchShortcut = true
+            showBatchTab = true
+            allowSingleActions = false
+        }
     }
 
     return {
@@ -180,7 +198,8 @@ export function detectPlatformPageContextByUrl(url: string): PlatformPageContext
         ui: {
             singleFormats,
             showBatchShortcut,
-            showBatchTab
+            showBatchTab,
+            allowSingleActions
         }
     }
 }
